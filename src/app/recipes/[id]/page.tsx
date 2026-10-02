@@ -16,6 +16,8 @@ export default function RecipeDetailPage({
   const router = useRouter()
 
   const [recipe, setRecipe] = useState<any>(null)
+  const [ingredients, setIngredients] = useState<any[]>([])
+  const [steps, setSteps] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [likesCount, setLikesCount] = useState(0)
   const [hasLiked, setHasLiked] = useState(false)
@@ -40,6 +42,21 @@ export default function RecipeDetailPage({
       if (!error && data) {
         setRecipe(data)
         setLikesCount(data.likes_count || 0)
+
+        // Ingredients fetch
+        const { data: ingData } = await supabase
+          .from('recipe_ingredients')
+          .select('*')
+          .eq('recipe_id', id)
+        if (ingData) setIngredients(ingData)
+
+        // Steps fetch
+        const { data: stepData } = await supabase
+          .from('recipe_steps')
+          .select('*')
+          .eq('recipe_id', id)
+          .order('step_number', { ascending: true })
+        if (stepData) setSteps(stepData)
 
         if (user) {
           const { data: likeData } = await supabase
@@ -196,13 +213,14 @@ export default function RecipeDetailPage({
 
           <div className="space-y-3">
             <h2 className="text-sm font-black text-amber-900 flex items-center gap-1.5 border-b border-amber-200 pb-2">
-              <span>🛒</span> 材料 (2人分)
+              <span>🛒</span> 材料 ({recipe.servings || '2人分'})
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {recipe.ingredients ? (
-                recipe.ingredients.split('\n').map((line: string, idx: number) => (
-                  <div key={idx} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60">
-                    {line}
+              {ingredients.length > 0 ? (
+                ingredients.map((ing: any, idx: number) => (
+                  <div key={idx} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex justify-between items-center">
+                    <span className="font-medium text-slate-800">{ing.name || ing.ingredient_name || ing.item_name}</span>
+                    <span className="font-bold text-slate-500">{ing.amount || ing.quantity || ""}</span>
                   </div>
                 ))
               ) : (
@@ -216,11 +234,11 @@ export default function RecipeDetailPage({
               <span>👨‍🍳</span> 作り方手順
             </h2>
             <div className="space-y-2 text-xs">
-              {recipe.steps ? (
-                recipe.steps.split('\n').map((step: string, idx: number) => (
+              {steps.length > 0 ? (
+                steps.map((st: any, idx: number) => (
                   <div key={idx} className="flex gap-3 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
-                    <span className="font-bold text-amber-800 shrink-0">{idx + 1}.</span>
-                    <p className="text-slate-700 leading-relaxed">{step}</p>
+                    <span className="font-bold text-amber-800 shrink-0">{st.step_number || idx + 1}.</span>
+                    <p className="text-slate-700 leading-relaxed">{st.instruction || st.step_description}</p>
                   </div>
                 ))
               ) : (
