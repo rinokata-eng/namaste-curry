@@ -47,7 +47,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
       const { data: recs } = await supabase
         .from('recipes')
         .select('*')
-        .eq('user_id', userId)
+        .eq('profile_id', userId)
         .order('created_at', { ascending: false })
 
       if (recs) setUserRecipes(recs)
@@ -55,7 +55,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
       const { data: bmRows } = await supabase
         .from('recipe_bookmarks')
         .select('recipe_id')
-        .eq('user_id', userId)
+        .eq('profile_id', userId)
 
       if (bmRows && bmRows.length > 0) {
         const bmIds = bmRows.map((b) => b.recipe_id)
