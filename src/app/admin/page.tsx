@@ -70,12 +70,12 @@ export default function AdminPage() {
       if (!recipeErr && recipeData) {
         const formattedRecipes = await Promise.all(
           recipeData.map(async (recipe) => {
-            let authorName = '名無しバルマ'
-            if (recipe.user_id) {
+            let authorName = recipe.author_name || '名無しバルマ'
+            if (recipe.profile_id && !recipe.author_name) {
               const { data: prof } = await supabase
                 .from('profiles')
                 .select('username')
-                .eq('id', recipe.user_id)
+                .eq('id', recipe.profile_id)
                 .single()
               if (prof?.username) authorName = prof.username
             }
