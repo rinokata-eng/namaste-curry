@@ -30,10 +30,9 @@ export default function BalumaRankPage() {
     },
     { 
       name: 'マハラジャ', 
-      desc: 'NAMASTEの世界における最高峰。運営事務局からの認定によって授与される伝説の最高ランク。', 
+      desc: 'NAMASTEの世界における最高峰。伝説のスパイスマスターとして称賛される最高ランク。', 
       badge: '👑',
-      bg: 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-amber-400 shadow-sm',
-      isSpecial: true
+      bg: 'bg-gradient-to-r from-amber-500 to-orange-500 text-white border-amber-400 shadow-sm'
     },
   ]
 
@@ -92,25 +91,18 @@ export default function BalumaRankPage() {
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">{r.desc}</p>
                 </div>
-
-                {r.isSpecial && (
-                  <div className="bg-amber-100/80 border border-amber-300 px-3.5 py-1.5 rounded-2xl text-[11px] text-amber-900 font-bold self-start md:self-center shrink-0">
-                    👑 運営認定限定ランク
-                  </div>
-                )}
               </div>
             ))}
           </div>
         </section>
 
-        {/* 自動ランクアップ・運営に関する注記 */}
+        {/* 指定のランク更新注記 */}
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white p-5 rounded-3xl shadow-sm text-xs space-y-1.5">
           <div className="font-black text-sm flex items-center gap-1.5">
             <span>💡</span> ランクの更新・付与について
           </div>
           <p className="opacity-95 leading-relaxed">
-            「見習い」から「達人」までは、日頃のレシピ投稿や「いいね」の獲得状況に応じて自動的にランクアップします。<br />
-            最高峰の「マハラジャ」ランクは自動昇格の対象外となり、運営事務局による直接の認定・管理コンソールからの付与のみで行われます。
+            「見習い」から「達人」までは、日頃のレシピ投稿や「いいね」の獲得状況に応じて自動的にランクアップします。
           </p>
         </div>
 
