@@ -1,237 +1,403 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
+
+type UserProfile = {
+  id: string
+  username?: string
+  email?: string
+  rank?: string
+  role?: string
+  status?: string
+  recipe_count?: number
+  like_count?: number
+  last_login_at?: string
+  created_at?: string
+}
+
+type RecipeItem = {
+  id: string
+  title: string
+  description?: string
+  user_id?: string
+  created_at?: string
+  author_name?: string
+  like_count?: number
+  bookmark_count?: number
+}
+
+type InquiryItem = {
+  id: string
+  name?: string
+  email?: string
+  category?: string
+  message?: string
+  created_at?: string
+}
 
 export default function AdminPage() {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [activeTab, setActiveTab] = useState<'users' | 'recipes' | 'inquiries'>('users')
   
-  const [recipes, setRecipes] = useState<any[]>([])
-  const [profiles, setProfiles] = useState<any[]>([])
-  const [inquiries, setInquiries] = useState<any[]>([])
+  const [users, setUsers] = useState<UserProfile[]>([])
+  const [recipes, setRecipes] = useState<RecipeItem[]>([])
+  const [inquiries, setInquiries] = useState<InquiryItem[]>([])
+  
+  const [loading, setLoading] = useState(true)
+  const [message, setMessage] = useState('')
 
-  const [activeTab, setActiveTab] = useState<'recipes' | 'profiles' | 'inquiries'>('inquiries')
+  const RANKS = ['見習い', '一人前', 'ベテラン', '達人', 'マハラジャ']
 
   useEffect(() => {
-    const stored = localStorage.getItem('namaste_user')
-    if (!stored) {
-      alert('管理者権限が必要です。ログインしてください。')
-      router.push('/login')
-      return
-    }
-
-    const user = JSON.parse(stored)
-    const isAdmin =
-      user.role === 'admin' ||
-      user.email === 'rinokata0921+admin@gmail.com' ||
-      (user.email && user.email.includes('+admin'))
-
-    if (!isAdmin) {
-      alert('管理者権限がありません。')
-      router.push('/')
-      return
-    }
-
-    setCurrentUser(user)
-    fetchAdminData()
+    fetchAllData()
   }, [])
 
-  const fetchAdminData = async () => {
+  const fetchAllData = async () => {
     setLoading(true)
+    try {
+      const res = await fetch('/api/admin/users')
+      const json = await res.json()
+      if (json.users) setUsers(json.users)
 
-    const { data: recipeData } = await supabase
-      .from('recipes')
-      .select('*')
-      .order('created_at', { ascending: false })
+      const { data: recipeData, error: recipeErr } = await supabase
+        .from('recipes')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    if (recipeData) setRecipes(recipeData)
+      if (!recipeErr && recipeData) {
+        const formattedRecipes = await Promise.all(
+          recipeData.map(async (recipe) => {
+            let authorName = '名無しバルマ'
+            if (recipe.user_id) {
+              const { data: prof } = await supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', recipe.user_id)
+                .single()
+              if (prof?.username) authorName = prof.username
+            }
 
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
+            const { count: likeCount } = await supabase
+              .from('recipe_likes')
+              .select('*', { count: 'exact', head: true })
+              .eq('recipe_id', recipe.id)
 
-    if (profileData) setProfiles(profileData)
+            const { count: bookmarkCount } = await supabase
+              .from('recipe_bookmarks')
+              .select('*', { count: 'exact', head: true })
+              .eq('recipe_id', recipe.id)
 
-    const { data: inquiryData } = await supabase
-      .from('inquiries')
-      .select('*')
-      .order('created_at', { ascending: false })
+            return {
+              ...recipe,
+              author_name: authorName,
+              like_count: likeCount || 0,
+              bookmark_count: bookmarkCount || 0,
+            }
+          })
+        )
+        setRecipes(formattedRecipes)
+      }
 
-    if (inquiryData) setInquiries(inquiryData)
+      const { data: inquiryData, error: inquiryErr } = await supabase
+        .from('inquiries')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-    setLoading(false)
-  }
+      if (!inquiryErr && inquiryData) {
+        setInquiries(inquiryData)
+      }
 
-  const handleDeleteRecipe = async (id: string, title: string) => {
-    if (!window.confirm(`レシピ「${title}」を削除しますか？`)) return
-
-    const { error } = await supabase.from('recipes').delete().eq('id', id)
-    if (error) {
-      alert('削除に失敗しました: ' + error.message)
-      return
+    } catch (err: any) {
+      console.error('データ取得エラー:', err.message)
+    } finally {
+      setLoading(false)
     }
-    setRecipes((prev) => prev.filter((r) => r.id !== id))
   }
 
-  const handleDeleteUser = async (id: string, username: string) => {
-    if (!window.confirm(`バルマ「${username}」のプロフィールおよび投稿データを削除しますか？`)) return
-
-    await supabase.from('recipes').delete().eq('profile_id', id)
-    const { error } = await supabase.from('profiles').delete().eq('id', id)
-
-    if (error) {
-      alert('削除に失敗しました: ' + error.message)
-      return
+  const handleUpdateRank = async (userId: string, newRank: string) => {
+    try {
+      const { error } = await supabase.from('profiles').update({ rank: newRank }).eq('id', userId)
+      if (error) throw error
+      setMessage(`ユーザーランクを [${newRank}] に更新しました。`)
+      fetchAllData()
+    } catch (err: any) {
+      alert('更新失敗: ' + err.message)
     }
-
-    setProfiles((prev) => prev.filter((p) => p.id !== id))
-    alert(`バルマ「${username}」を削除しました。`)
   }
 
-  const handleToggleInquiryStatus = async (inquiry: any) => {
-    const nextStatus = inquiry.status === '対応済み' ? '未対応' : '対応済み'
-    await supabase.from('inquiries').update({ status: nextStatus }).eq('id', inquiry.id)
-
-    setInquiries((prev) =>
-      prev.map((i) => (i.id === inquiry.id ? { ...i, status: nextStatus } : i))
-    )
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    try {
+      const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId)
+      if (error) throw error
+      setMessage(`ユーザー権限を [${newRole}] に更新しました。`)
+      fetchAllData()
+    } catch (err: any) {
+      alert('更新失敗: ' + err.message)
+    }
   }
 
-  if (loading) {
-    return (
-      <main className="min-h-screen bg-slate-900 text-amber-100 p-10 flex justify-center items-center text-sm">
-        管理者データを読み込み中...
-      </main>
-    )
+  const handleUpdateStatus = async (userId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase.from('profiles').update({ status: newStatus }).eq('id', userId)
+      if (error) throw error
+      setMessage(`ユーザーのステータスを [${newStatus === 'suspended' ? '利用停止' : '利用中'}] に変更しました。`)
+      fetchAllData()
+    } catch (err: any) {
+      alert('ステータス変更失敗: ' + err.message)
+    }
+  }
+
+  const handleDeleteUser = async (userId: string, username?: string) => {
+    if (!confirm(`本当にバルマ「${username || userId}」を削除しますか？`)) return
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', userId)
+      if (error) throw error
+      setMessage('バルマユーザーを削除しました。')
+      fetchAllData()
+    } catch (err: any) {
+      alert('削除失敗: ' + err.message)
+    }
+  }
+
+  const handleDeleteRecipe = async (recipeId: string) => {
+    if (!confirm('本当にこのレシピを削除しますか？')) return
+    try {
+      const { error } = await supabase.from('recipes').delete().eq('id', recipeId)
+      if (error) throw error
+      setMessage('レシピを削除しました。')
+      fetchAllData()
+    } catch (err: any) {
+      alert('削除失敗: ' + err.message)
+    }
   }
 
   return (
-    <main className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-10 space-y-8">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">👑</span>
-            <h1 className="text-xl font-black text-amber-400">NAMASTE 管理者コンソール</h1>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-10 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between bg-slate-900 p-6 rounded-2xl shadow-xl border border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 bg-amber-500/20 text-amber-400 text-xs font-bold rounded-md border border-amber-500/30">ADMIN MODE</span>
+              <h1 className="text-2xl font-bold text-white">NAMASTE 管理者コンソール</h1>
+            </div>
+            <p className="text-sm text-slate-400 mt-1">お問い合わせ管理、レシピ管理、バルマユーザー管理を一元管理します。</p>
           </div>
-          <Link href="/" className="text-xs bg-slate-800 hover:bg-slate-700 text-amber-300 py-2 px-4 rounded-xl font-bold">
+          <Link className="px-4 py-2 bg-slate-800 text-slate-300 font-medium rounded-xl hover:bg-slate-700 transition text-sm border border-slate-700" href="/">
             トップへ戻る
           </Link>
         </div>
 
-        <div className="flex gap-2 border-b border-slate-800 pb-2">
+        {message && (
+          <div className="bg-emerald-950/80 border border-emerald-800 text-emerald-300 p-4 rounded-xl text-sm font-medium">
+            {message}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => setActiveTab('inquiries')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-              activeTab === 'inquiries' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+            onClick={() => setActiveTab('users')}
+            className={`px-5 py-2.5 rounded-xl font-bold text-sm transition border ${
+              activeTab === 'users' ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
             }`}
           >
-            ✉️ お問い合わせ一覧 ({inquiries.filter((i) => i.status === '未対応').length}件未対応)
+            👥 バルマユーザー管理 ({users.length})
           </button>
           <button
             onClick={() => setActiveTab('recipes')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-              activeTab === 'recipes' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+            className={`px-5 py-2.5 rounded-xl font-bold text-sm transition border ${
+              activeTab === 'recipes' ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
             }`}
           >
             🍛 レシピ管理 ({recipes.length})
           </button>
           <button
-            onClick={() => setActiveTab('profiles')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-              activeTab === 'profiles' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+            onClick={() => setActiveTab('inquiries')}
+            className={`px-5 py-2.5 rounded-xl font-bold text-sm transition border ${
+              activeTab === 'inquiries' ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 border-slate-800 hover:bg-slate-800'
             }`}
           >
-            👤 バルマユーザー管理 ({profiles.length})
+            ✉️ お問い合わせ一覧 ({inquiries.length}件)
           </button>
         </div>
 
-        {activeTab === 'inquiries' && (
-          <div className="space-y-4">
-            {inquiries.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-8">お問い合わせはまだ届いていません。</p>
-            ) : (
-              inquiries.map((inq) => (
-                <div key={inq.id} className="bg-slate-800 p-4 rounded-2xl border border-slate-700 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        inq.status === '対応済み' ? 'bg-emerald-900 text-emerald-300' : 'bg-amber-900 text-amber-300'
-                      }`}>
-                        {inq.status}
-                      </span>
-                      <h3 className="font-bold text-sm text-amber-300 mt-1">{inq.subject}</h3>
-                    </div>
-                    <button
-                      onClick={() => handleToggleInquiryStatus(inq)}
-                      className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold px-3 py-1 rounded-lg"
-                    >
-                      {inq.status === '対応済み' ? '未対応に戻す' : '対応済みにする'}
-                    </button>
-                  </div>
-
-                  <div className="text-xs text-slate-400 space-x-4">
-                    <span>送信者: {inq.sender_name}</span>
-                    <span>返信先: {inq.sender_email}</span>
-                    <span>日時: {new Date(inq.created_at).toLocaleString()}</span>
-                  </div>
-
-                  <p className="text-xs text-slate-200 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 whitespace-pre-wrap leading-relaxed">
-                    {inq.message}
-                  </p>
-                </div>
-              ))
-            )}
+        <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 overflow-hidden">
+          <div className="p-6 border-b border-slate-800 flex justify-between items-center">
+            <h2 className="font-bold text-slate-200 text-lg">
+              {activeTab === 'users' && 'バルマユーザー一覧'}
+              {activeTab === 'recipes' && '登録レシピ一覧（詳細・統計）'}
+              {activeTab === 'inquiries' && 'お問い合わせ内容一覧'}
+            </h2>
+            <button onClick={fetchAllData} className="text-sm text-amber-400 hover:text-amber-300 font-medium transition flex items-center gap-1">
+              🔄 リロード
+            </button>
           </div>
-        )}
 
-        {activeTab === 'recipes' && (
-          <div className="space-y-3">
-            {recipes.map((r) => (
-              <div key={r.id} className="flex justify-between items-center bg-slate-800 p-3 rounded-xl border border-slate-700 text-xs">
-                <div>
-                  <span className="font-bold text-amber-300">{r.title}</span>
-                  <span className="text-slate-400 ml-2">(投稿: {r.author_name})</span>
+          {loading ? (
+            <div className="p-12 text-center text-slate-500">読み込み中...</div>
+          ) : (
+            <>
+              {activeTab === 'users' && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/50 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+                        <th className="p-4">ユーザー名 / ID</th>
+                        <th className="p-4">ステータス</th>
+                        <th className="p-4">管理権限</th>
+                        <th className="p-4">バルマランク</th>
+                        <th className="p-4">投稿 / イイネ</th>
+                        <th className="p-4">最終ログイン / 登録</th>
+                        <th className="p-4 text-right">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60 text-sm">
+                      {users.length === 0 ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-500">ユーザーがいません。</td></tr>
+                      ) : (
+                        users.map((u) => {
+                          const isSuspended = u.status === 'suspended'
+                          return (
+                            <tr key={u.id} className={`hover:bg-slate-800/40 transition ${isSuspended ? 'opacity-50 bg-rose-950/10' : ''}`}>
+                              <td className="p-4">
+                                <div className="font-bold text-white flex items-center gap-2">
+                                  {u.username || '名無しのユーザー'}
+                                  {isSuspended && <span className="text-[10px] bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30">利用停止中</span>}
+                                </div>
+                                <div className="text-xs text-slate-500 font-mono">{u.id}</div>
+                              </td>
+                              <td className="p-4">
+                                <select
+                                  value={u.status || 'active'}
+                                  onChange={(e) => handleUpdateStatus(u.id, e.target.value)}
+                                  className={`px-3 py-1.5 border rounded-xl text-xs font-bold focus:outline-none ${
+                                    isSuspended ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                  }`}
+                                >
+                                  <option value="active" className="bg-slate-900 text-emerald-300">🟢 利用中</option>
+                                  <option value="suspended" className="bg-slate-900 text-rose-300">🔴 利用停止</option>
+                                </select>
+                              </td>
+                              <td className="p-4">
+                                <select
+                                  value={u.role || 'user'}
+                                  onChange={(e) => handleUpdateRole(u.id, e.target.value)}
+                                  className={`px-3 py-1.5 border rounded-xl text-xs font-bold focus:outline-none ${
+                                    (u.role || 'user') === 'admin' ? 'bg-rose-500/20 text-rose-300 border-rose-500/30' : 'bg-slate-800 text-slate-300 border-slate-700'
+                                  }`}
+                                >
+                                  <option value="admin" className="bg-slate-900 text-rose-300">admin (管理者)</option>
+                                  <option value="user" className="bg-slate-900 text-slate-300">user (一般)</option>
+                                </select>
+                              </td>
+                              <td className="p-4">
+                                <span className="inline-block px-3 py-1 bg-amber-500/10 text-amber-400 rounded-full text-xs font-bold border border-amber-500/20">
+                                  {u.rank || '見習い'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-xs">
+                                <div className="font-semibold text-slate-200">投稿: {u.recipe_count ?? 0}件</div>
+                                <div className="font-semibold text-rose-400">❤️ {u.like_count ?? 0}</div>
+                              </td>
+                              <td className="p-4 text-xs space-y-1">
+                                <div className="text-slate-300">イン: {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : '未記録'}</div>
+                                <div className="text-slate-500">登録: {u.created_at ? new Date(u.created_at).toLocaleString() : '-'}</div>
+                              </td>
+                              <td className="p-4 text-right space-x-2 flex items-center justify-end">
+                                <select
+                                  value={u.rank || '見習い'}
+                                  onChange={(e) => handleUpdateRank(u.id, e.target.value)}
+                                  className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-xl text-xs font-medium text-slate-200 focus:outline-none"
+                                >
+                                  {RANKS.map((rank) => (
+                                    <option key={rank} value={rank} className="bg-slate-900 text-slate-200">{rank}</option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={() => handleDeleteUser(u.id, u.username)}
+                                  className="px-3 py-1.5 bg-rose-500/20 text-rose-300 font-bold rounded-xl text-xs hover:bg-rose-500/30 transition border border-rose-500/30"
+                                >
+                                  削除
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-                <button
-                  onClick={() => handleDeleteRecipe(r.id, r.title)}
-                  className="bg-red-900/80 hover:bg-red-800 text-red-200 font-bold px-3 py-1 rounded-lg"
-                >
-                  削除
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
 
-        {activeTab === 'profiles' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {profiles.map((p) => (
-              <div key={p.id} className="bg-slate-800 p-3.5 rounded-xl border border-slate-700 text-xs flex justify-between items-center">
-                <div className="space-y-0.5">
-                  <div className="font-bold text-amber-300">{p.username} <span className="text-slate-400 font-normal">({p.rank || '見習い'})</span></div>
-                  <div className="text-slate-500 text-[10px] truncate max-w-[200px]">ID: {p.id}</div>
-                  {p.role === 'admin' && (
-                    <span className="inline-block text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30">
-                      👑 管理者
-                    </span>
+              {activeTab === 'recipes' && (
+                <div className="p-6 space-y-4">
+                  {recipes.length === 0 ? (
+                    <div className="p-12 text-center text-slate-500">登録されたレシピがありません。</div>
+                  ) : (
+                    recipes.map((r) => (
+                      <div key={r.id} className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-bold text-white">{r.title}</h3>
+                            <span className="text-xs px-2.5 py-1 bg-amber-500/10 text-amber-400 rounded-md border border-amber-500/20">
+                              投稿: {r.author_name}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-400 line-clamp-1">{r.description || '説明文なし'}</p>
+                          <div className="text-xs text-slate-500 pt-1">
+                            登録日時: {r.created_at ? new Date(r.created_at).toLocaleString() : '-'}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6 self-end md:self-center">
+                          <div className="flex items-center gap-4 text-sm font-semibold">
+                            <span className="text-rose-400 flex items-center gap-1">❤️ いいね: {r.like_count}</span>
+                            <span className="text-amber-400 flex items-center gap-1">⭐ お気に入り: {r.bookmark_count}</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteRecipe(r.id)}
+                            className="px-4 py-2 bg-rose-500/20 text-rose-300 font-bold rounded-xl text-xs hover:bg-rose-500/30 transition border border-rose-500/30"
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
-                <button
-                  onClick={() => handleDeleteUser(p.id, p.username)}
-                  className="bg-red-900/80 hover:bg-red-800 text-red-200 font-bold px-3 py-1.5 rounded-lg shrink-0"
-                >
-                  削除
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+              )}
+
+              {activeTab === 'inquiries' && (
+                <div className="p-6 space-y-4">
+                  {inquiries.length === 0 ? (
+                    <div className="p-12 text-center text-slate-500">お問い合わせはありません。</div>
+                  ) : (
+                    inquiries.map((inq) => (
+                      <div key={inq.id} className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className="px-3 py-1 bg-indigo-500/20 text-indigo-300 text-xs font-bold rounded-lg border border-indigo-500/30">
+                              {inq.category || 'お問い合わせ'}
+                            </span>
+                            <span className="text-sm font-bold text-slate-200">{inq.name || '匿名'} ({inq.email || 'メールなし'})</span>
+                          </div>
+                          <span className="text-xs text-slate-400">
+                            問い合わせ日時: {inq.created_at ? new Date(inq.created_at).toLocaleString() : '-'}
+                          </span>
+                        </div>
+                        <div className="bg-slate-900 p-4 rounded-xl text-slate-300 text-sm border border-slate-800 whitespace-pre-wrap">
+                          {inq.message || '内容がありません。'}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   )
 }
