@@ -180,7 +180,7 @@ export function AnimatedBookmarkButton({
         <span className={`transition-transform duration-300 ${isBookmarked ? 'scale-150 rotate-[20deg]' : ''}`}>
           ⭐
         </span>
-        <span className="tracking-wide">{isBookmarked ? '保存済み' : '保存'}</span>
+        <span className="tracking-wide"></span>
       </button>
     </div>
   )
