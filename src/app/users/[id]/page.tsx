@@ -380,11 +380,28 @@ export default function UserProfilePage() {
             <Link
               key={r.id}
               href={`/recipes/${r.id}`}
-              className="bg-white rounded-2xl p-5 border border-amber-100/80 shadow-sm hover:shadow-md transition space-y-2 block"
+              className="bg-white rounded-2xl p-5 border border-amber-100/80 shadow-sm hover:shadow-md transition space-y-2 block relative group"
             >
-              <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                {r.genre}
-              </span>
+              <div className="flex justify-between items-center">
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                  {r.genre}
+                </span>
+
+                {/* 自分が投稿したレシピかつ投稿タブの場合に「編集」ボタンを表示 */}
+                {isSelf && activeTab === 'posted' && (
+                  <button
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      router.push(`/recipes/${r.id}/edit`)
+                    }}
+                    className="bg-slate-100 hover:bg-amber-500 text-slate-600 hover:text-white border border-slate-200 hover:border-amber-500 text-[11px] font-bold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                  >
+                    ✏️ 編集
+                  </button>
+                )}
+              </div>
+
               <h3 className="font-bold text-slate-800 text-sm">{r.title}</h3>
               <p className="text-xs text-slate-500 line-clamp-2">{r.description}</p>
             </Link>
