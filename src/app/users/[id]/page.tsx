@@ -5,6 +5,37 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
+type StatType = 'all' | 'posted' | 'liked' | 'bookmarked'
+
+// ゲージが「グーン」と滑らかに伸縮・変化するアニメーションコンポーネント
+function AnimatedBar({ label, value, minLabel, maxLabel }: { label: string; value: number; minLabel: string; maxLabel: string }) {
+  const percentage = Math.min(100, Math.max(0, ((value - 1) / 4) * 100))
+
+  return (
+    <div className="space-y-1 text-xs">
+      <div className="flex justify-between items-center font-bold text-slate-700">
+        <span>{label}</span>
+        <span className="text-amber-600 font-black text-sm">
+          {value} <span className="text-[10px] text-slate-400 font-normal">/ 5</span>
+        </span>
+      </div>
+      <div className="w-full bg-slate-200/80 rounded-full h-3 overflow-hidden border border-slate-300/60 p-0.5">
+        <div
+          className="bg-gradient-to-r from-amber-500 to-amber-600 h-full rounded-full shadow-sm"
+          style={{
+            width: `${percentage}%`,
+            transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        />
+      </div>
+      <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+        <span>{minLabel}</span>
+        <span>{maxLabel}</span>
+      </div>
+    </div>
+  )
+}
+
 export default function UserProfilePage() {
   const params = useParams()
   const router = useRouter()
@@ -16,22 +47,17 @@ export default function UserProfilePage() {
   const [activeTab, setActiveTab] = useState<'posted' | 'bookmarked'>('posted')
   const [loading, setLoading] = useState(true)
 
-  // バルマの投稿レシピに対するアンケート集計結果
-  const [userTasteStats, setUserTasteStats] = useState<{
-    count: number
-    avgTaste: number
-    avgEffort: number
-    avgIngredients: number
-    avgSpiciness: number
-    avgStyle: number
-  }>({
-    count: 0,
-    avgTaste: 3,
-    avgEffort: 3,
-    avgIngredients: 3,
-    avgSpiciness: 3,
-    avgStyle: 3,
+  // 4軸傾向データ状態
+  const [stats, setStats] = useState<Record<StatType, { count: number; avgTaste: number; avgEffort: number; avgSpiciness: number }>>({
+    all: { count: 0, avgTaste: 3, avgEffort: 3, avgSpiciness: 3 },
+    posted: { count: 0, avgTaste: 3, avgEffort: 3, avgSpiciness: 3 },
+    liked: { count: 0, avgTaste: 3, avgEffort: 3, avgSpiciness: 3 },
+    bookmarked: { count: 0, avgTaste: 3, avgEffort: 3, avgSpiciness: 3 },
   })
+
+  // 自動切り替え管理
+  const [selectedStatMode, setSelectedStatMode] = useState<StatType>('all')
+  const [isAutoPlay, setIsAutoPlay] = useState(true)
 
   useEffect(() => {
     if (userId) {
@@ -39,107 +65,125 @@ export default function UserProfilePage() {
     }
   }, [userId])
 
+  // 数秒ごとの自動切替ループ処理（3.5秒周期）
+  useEffect(() => {
+    if (!isAutoPlay) return
+    const modes: StatType[] = ['all', 'posted', 'liked', 'bookmarked']
+    const interval = setInterval(() => {
+      setSelectedStatMode((prev) => {
+        const nextIdx = (modes.indexOf(prev) + 1) % modes.length
+        return modes[nextIdx]
+      })
+    }, 3500)
+
+    return () => clearInterval(interval)
+  }, [isAutoPlay])
+
   async function loadUserData() {
     setLoading(true)
 
-    // 1. プロフィールデータ取得
-    const { data: pData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-
-    setProfile(pData)
-
-    // 2. 投稿レシピ取得
-    const { data: rData } = await supabase
-      .from('recipes')
-      .select('*')
-      .eq('profile_id', userId)
-      .order('created_at', { ascending: false })
+    // 1. プロフィール＆投稿データ取得
+    const [{ data: pData }, { data: rData }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('id', userId).single(),
+      supabase.from('recipes').select('*').eq('profile_id', userId).order('created_at', { ascending: false }),
+    ])
 
     const userRecipes = rData || []
     setRecipes(userRecipes)
 
-    // 3. 投稿レシピに対するアンケート評価データを自動集計
-    if (userRecipes.length > 0) {
-      const recipeIds = userRecipes.map((r) => r.id)
-      const { data: eData } = await supabase
-        .from('recipe_evaluations')
-        .select('*')
-        .in('recipe_id', recipeIds)
+    // 2. いいね＆お気に入りデータ取得
+    const [{ data: lData }, { data: bData }] = await Promise.all([
+      supabase.from('recipe_likes').select('recipe_id').eq('user_id', userId),
+      supabase.from('recipe_bookmarks').select('recipe_id, recipes(*)').eq('user_id', userId),
+    ])
 
-      if (eData && eData.length > 0) {
-        const total = eData.length
-        const calcAvg = (key: string) =>
-          Math.round((eData.reduce((sum, item) => sum + (item[key] || 3), 0) / total) * 10) / 10
+    const likedIds = (lData || []).map((item) => item.recipe_id)
+    const bmList = (bData || []).map((item) => item.recipes).filter(Boolean)
+    const bookmarkedIds = bmList.map((r: any) => r.id)
+    setBookmarks(bmList)
 
-        setUserTasteStats({
-          count: total,
-          avgTaste: calcAvg('score_taste'),
-          avgEffort: calcAvg('score_effort'),
-          avgIngredients: calcAvg('score_ingredients'),
-          avgSpiciness: calcAvg('score_spiciness'),
-          avgStyle: calcAvg('score_style'),
-        })
+    // 3. ランクの正確な判定（DBに設定があればそれを最優先、なければ実績自動判定）
+    let rank = pData?.balma_rank
+    if (!rank) {
+      const postCount = userRecipes.length
+      const totalLikes = userRecipes.reduce((sum, r) => sum + (r.likes_count || 0), 0)
+      if (postCount >= 10 || totalLikes >= 50 || pData?.role?.includes('admin')) {
+        rank = 'マハラジャ'
+      } else if (postCount >= 3) {
+        rank = 'シェフ'
+      } else {
+        rank = '見習い'
       }
     }
 
-    // 4. お気に入りレシピ取得
-    const { data: bData } = await supabase
-      .from('recipe_bookmarks')
-      .select('recipe_id, recipes(*)')
-      .eq('profile_id', userId)
+    setProfile({
+      ...pData,
+      balma_rank: rank,
+    })
 
-    if (bData) {
-      setBookmarks(bData.map((b) => b.recipes).filter(Boolean))
+    // 4. 評価アンケートの多角集計
+    const postedIds = userRecipes.map((r) => r.id)
+    const allRelevantIds = Array.from(new Set([...postedIds, ...likedIds, ...bookmarkedIds]))
+
+    if (allRelevantIds.length > 0) {
+      const { data: eData } = await supabase.from('recipe_evaluations').select('*').in('recipe_id', allRelevantIds)
+      const evals = eData || []
+
+      const calcStatsForIds = (targetIds: string[]) => {
+        const matchedEvals = evals.filter((e) => targetIds.includes(e.recipe_id))
+        if (matchedEvals.length === 0) return { count: 0, avgTaste: 3, avgEffort: 3, avgSpiciness: 3 }
+
+        const len = matchedEvals.length
+        return {
+          count: len,
+          avgTaste: Math.round((matchedEvals.reduce((s, e) => s + (e.score_taste || 3), 0) / len) * 10) / 10,
+          avgEffort: Math.round((matchedEvals.reduce((s, e) => s + (e.score_effort || 3), 0) / len) * 10) / 10,
+          avgSpiciness: Math.round((matchedEvals.reduce((s, e) => s + (e.score_spiciness || 3), 0) / len) * 10) / 10,
+        }
+      }
+
+      setStats({
+        all: calcStatsForIds(allRelevantIds),
+        posted: calcStatsForIds(postedIds),
+        liked: calcStatsForIds(likedIds),
+        bookmarked: calcStatsForIds(bookmarkedIds),
+      })
     }
 
     setLoading(false)
   }
 
-  // スコアのバー表示用コンポーネント
-  const ScoreBar = ({ label, value, minLabel, maxLabel }: { label: string; value: number; minLabel: string; maxLabel: string }) => (
-    <div className="space-y-1 text-xs">
-      <div className="flex justify-between items-center font-bold text-slate-700">
-        <span>{label}</span>
-        <span className="text-amber-600 font-black">{value} <span className="text-[10px] text-slate-400 font-normal">/ 5</span></span>
-      </div>
-      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
-        <div
-          className="bg-amber-500 h-full rounded-full transition-all duration-500"
-          style={{ width: `${(value / 5) * 100}%` }}
-        />
-      </div>
-      <div className="flex justify-between text-[10px] text-slate-400">
-        <span>{minLabel}</span>
-        <span>{maxLabel}</span>
-      </div>
-    </div>
-  )
+  const currentStat = stats[selectedStatMode]
+
+  const modeLabels: Record<StatType, { name: string; icon: string }> = {
+    all: { name: '総合傾向', icon: '✨' },
+    posted: { name: '投稿したレシピ', icon: '🍛' },
+    liked: { name: 'いいねしたレシピ', icon: '❤️' },
+    bookmarked: { name: '保存したレシピ', icon: '⭐' },
+  }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-amber-50/50 p-6 flex justify-center items-center text-slate-600 font-bold">
+      <main className="min-h-screen bg-amber-50 p-6 flex justify-center items-center text-slate-600 font-bold">
         バルマ情報を読み込み中... 👳‍♂️
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-amber-50/50 p-4 md:p-8 font-sans">
+    <main className="min-h-screen bg-amber-50 p-4 md:p-8 font-sans">
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* 戻るリンク */}
         <button
           onClick={() => router.back()}
-          className="text-amber-700 hover:text-amber-800 text-xs font-bold flex items-center gap-1 transition"
+          className="text-amber-700 hover:text-amber-800 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
         >
           ← レシピ一覧に戻る
         </button>
 
         {/* バルマ基本情報ヘッダー */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-amber-100/80 space-y-6">
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-amber-200 space-y-6">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl border-2 border-amber-200 shadow-inner">
               👳‍♂️
@@ -148,7 +192,7 @@ export default function UserProfilePage() {
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-black text-slate-800">{profile?.username || 'たかのり'}</h1>
                 <span className="bg-amber-100 text-amber-800 text-xs px-3 py-1 rounded-full font-bold border border-amber-200">
-                  {profile?.balma_rank || '見習い'}
+                  {profile?.balma_rank || 'マハラジャ'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
@@ -159,9 +203,9 @@ export default function UserProfilePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* アカウント活動状況 */}
-            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-100 space-y-3">
+            <div className="bg-amber-50/60 rounded-2xl p-4 border border-amber-100 space-y-3">
               <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <span>⏱️</span> アカウント活動状況
+                <span>⏱️️</span> アカウント活動状況
               </h3>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
@@ -179,41 +223,65 @@ export default function UserProfilePage() {
               </div>
             </div>
 
-            {/* 投稿レシピの平均傾向（アンケート自動集計） */}
-            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-100 space-y-3">
-              <div className="flex justify-between items-center">
-                <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <span>🍛</span> このバルマのカレーの傾向
-                </h3>
-                <span className="text-[10px] text-slate-400 font-bold">
-                  ({userTasteStats.count}件のレシピ評価に基づく)
-                </span>
+            {/* 🍛 多角的アニメーション傾向カード */}
+            <div
+              className="bg-amber-50/60 rounded-2xl p-4 border border-amber-100 space-y-3 relative overflow-hidden"
+              onMouseEnter={() => setIsAutoPlay(false)}
+              onMouseLeave={() => setIsAutoPlay(true)}
+            >
+              {/* モード切り替えヘッダー */}
+              <div className="flex justify-between items-center border-b border-amber-200/60 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-base">{modeLabels[selectedStatMode].icon}</span>
+                  <h3 className="text-xs font-black text-amber-950">
+                    {modeLabels[selectedStatMode].name}
+                  </h3>
+                </div>
+                <div className="flex gap-1.5">
+                  {(['all', 'posted', 'liked', 'bookmarked'] as StatType[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => {
+                        setSelectedStatMode(m)
+                        setIsAutoPlay(false)
+                      }}
+                      className={`h-2 rounded-full transition-all duration-300 cursor-pointer ${
+                        selectedStatMode === m ? 'bg-amber-600 w-5' : 'bg-slate-300 hover:bg-slate-400 w-2'
+                      }`}
+                      title={modeLabels[m].name}
+                    />
+                  ))}
+                </div>
               </div>
 
-              {userTasteStats.count === 0 ? (
-                <p className="text-xs text-slate-400 py-2">
-                  まだ投稿レシピへの評価が集まっていません。
+              {/* 伸縮アニメーションゲージ */}
+              {currentStat.count === 0 ? (
+                <p className="text-xs text-slate-400 py-3 text-center">
+                  まだ評価データが集まっていません。
                 </p>
               ) : (
-                <div className="space-y-2.5">
-                  <ScoreBar
+                <div className="space-y-2.5 pt-1">
+                  <AnimatedBar
                     label="本格度・味わい"
-                    value={userTasteStats.avgTaste}
+                    value={currentStat.avgTaste}
                     minLabel="家庭的"
                     maxLabel="本格的"
                   />
-                  <ScoreBar
+                  <AnimatedBar
                     label="調理の手間"
-                    value={userTasteStats.avgEffort}
+                    value={currentStat.avgEffort}
                     minLabel="時短・手軽"
                     maxLabel="本格仕込み"
                   />
-                  <ScoreBar
+                  <AnimatedBar
                     label="辛さレベル"
-                    value={userTasteStats.avgSpiciness}
+                    value={currentStat.avgSpiciness}
                     minLabel="マイルド"
                     maxLabel="激辛"
                   />
+                  <p className="text-[10px] text-slate-400 text-right font-medium">
+                    ({currentStat.count}件のデータに基づく / 自動ループ表示中)
+                  </p>
                 </div>
               )}
             </div>
@@ -224,7 +292,7 @@ export default function UserProfilePage() {
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab('posted')}
-            className={`px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            className={`px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'posted'
                 ? 'bg-amber-500 text-white shadow-md'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -234,7 +302,7 @@ export default function UserProfilePage() {
           </button>
           <button
             onClick={() => setActiveTab('bookmarked')}
-            className={`px-5 py-2.5 rounded-full text-xs font-bold transition ${
+            className={`px-5 py-2.5 rounded-full text-xs font-bold transition cursor-pointer ${
               activeTab === 'bookmarked'
                 ? 'bg-amber-500 text-white shadow-md'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -250,7 +318,7 @@ export default function UserProfilePage() {
             <Link
               key={r.id}
               href={`/recipes/${r.id}`}
-              className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition space-y-2 block"
+              className="bg-white rounded-2xl p-5 border border-amber-100/80 shadow-sm hover:shadow-md transition space-y-2 block"
             >
               <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
                 {r.genre}
