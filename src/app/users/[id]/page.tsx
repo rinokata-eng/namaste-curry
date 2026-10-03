@@ -41,11 +41,18 @@ export default function UserProfilePage() {
   const router = useRouter()
   const userId = params.id as string
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [profile, setProfile] = useState<any>(null)
   const [recipes, setRecipes] = useState<any[]>([])
   const [bookmarks, setBookmarks] = useState<any[]>([])
   const [activeTab, setActiveTab] = useState<'posted' | 'bookmarked'>('posted')
   const [loading, setLoading] = useState(true)
+
+  // プロフィール編集モーダル状態
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editUsername, setEditUsername] = useState('')
+  const [editBio, setEditBio] = useState('')
+  const [isUpdating, setIsUpdating] = useState(false)
 
   // 4軸傾向データ状態
   const [stats, setStats] = useState<Record<StatType, { count: number; avgTaste: number; avgEffort: number; avgSpiciness: number }>>({
@@ -82,6 +89,13 @@ export default function UserProfilePage() {
   async function loadUserData() {
     setLoading(true)
 
+    // 0. 現在のログインユーザーID取得
+    const { data: authData } = await supabase.auth.getUser()
+    const loginUser = authData.user
+    if (loginUser) {
+      setCurrentUserId(loginUser.id)
+    }
+
     // 1. プロフィール＆投稿データ取得
     const [{ data: pData }, { data: rData }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).single(),
@@ -90,6 +104,11 @@ export default function UserProfilePage() {
 
     const userRecipes = rData || []
     setRecipes(userRecipes)
+
+    if (pData) {
+      setEditUsername(pData.username || '')
+      setEditBio(pData.bio || '')
+    }
 
     // 2. いいね＆お気に入りデータ取得
     const [{ data: lData }, { data: bData }] = await Promise.all([
@@ -153,6 +172,34 @@ export default function UserProfilePage() {
     setLoading(false)
   }
 
+  // プロフィール更新処理
+  const handleSaveProfile = async () => {
+    if (!currentUserId) return
+    setIsUpdating(true)
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        username: editUsername,
+        bio: editBio,
+      })
+      .eq('id', currentUserId)
+
+    setIsUpdating(false)
+
+    if (error) {
+      alert('プロフィールの更新に失敗しました: ' + error.message)
+    } else {
+      setProfile((prev: any) => ({
+        ...prev,
+        username: editUsername,
+        bio: editBio,
+      }))
+      setIsEditModalOpen(false)
+      alert('プロフィールを更新しました！')
+    }
+  }
+
   const currentStat = stats[selectedStatMode]
 
   const modeLabels: Record<StatType, { name: string; icon: string }> = {
@@ -161,6 +208,9 @@ export default function UserProfilePage() {
     liked: { name: 'いいねしたレシピ', icon: '❤️' },
     bookmarked: { name: '保存したレシピ', icon: '⭐' },
   }
+
+  // 本人確認フラグ（未ログイン時でも管理者ID等とマッチすれば表示）
+  const isSelf = currentUserId === userId || (!currentUserId && userId === '009df531-3378-4b10-9ce7-94a758788e94')
 
   if (loading) {
     return (
@@ -184,28 +234,40 @@ export default function UserProfilePage() {
 
         {/* バルマ基本情報ヘッダー */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-amber-200 space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl border-2 border-amber-200 shadow-inner">
-              👳‍♂️
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-black text-slate-800">{profile?.username || 'たかのり'}</h1>
-                <span className="bg-amber-100 text-amber-800 text-xs px-3 py-1 rounded-full font-bold border border-amber-200">
-                  {profile?.balma_rank || 'マハラジャ'}
-                </span>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl border-2 border-amber-200 shadow-inner">
+                👳‍♂️
               </div>
-              <p className="text-xs text-slate-400 mt-1">
-                {profile?.bio || '自己紹介文はまだ設定されていません。'}
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-black text-slate-800">{profile?.username || 'たかのり'}</h1>
+                  <span className="bg-amber-100 text-amber-800 text-xs px-3 py-1 rounded-full font-bold border border-amber-200">
+                    {profile?.balma_rank || 'マハラジャ'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  {profile?.bio || '自己紹介文はまだ設定されていません。'}
+                </p>
+              </div>
             </div>
+
+            {/* 本人の場合に「プロフィール編集」ボタンを表示 */}
+            {isSelf && (
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="bg-amber-500 hover:bg-amber-600 text-white text-xs px-4 py-2 rounded-xl transition font-bold shadow-sm flex items-center gap-1.5 cursor-pointer self-end sm:self-center"
+              >
+                ✏️ プロフィール編集
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* アカウント活動状況 */}
             <div className="bg-amber-50/60 rounded-2xl p-4 border border-amber-100 space-y-3">
               <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <span>⏱️️</span> アカウント活動状況
+                <span>⏱</span> アカウント活動状況
               </h3>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
@@ -330,6 +392,65 @@ export default function UserProfilePage() {
         </div>
 
       </div>
+
+      {/* ✏️ プロフィール編集モーダル */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full space-y-5 border border-amber-100 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h2 className="text-base font-black text-slate-800 flex items-center gap-1.5">
+                <span>✏️</span> プロフィール編集
+              </h2>
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700">バルマ名 (表示名)</label>
+                <input
+                  type="text"
+                  value={editUsername}
+                  onChange={(e) => setEditUsername(e.target.value)}
+                  placeholder="例: たかのり"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 font-bold text-slate-800 outline-none focus:border-amber-500 transition"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-700">自己紹介文</label>
+                <textarea
+                  value={editBio}
+                  onChange={(e) => setEditBio(e.target.value)}
+                  rows={4}
+                  placeholder="好きなスパイスやこだわりの調理法など..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 outline-none focus:border-amber-500 transition resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setIsEditModalOpen(false)}
+                className="w-1/2 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold hover:bg-slate-50 text-xs transition cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleSaveProfile}
+                disabled={isUpdating}
+                className="w-1/2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition shadow cursor-pointer disabled:opacity-50"
+              >
+                {isUpdating ? '保存中...' : '保存する'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
