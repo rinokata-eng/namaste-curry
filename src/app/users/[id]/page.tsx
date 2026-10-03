@@ -1,275 +1,264 @@
 'use client'
 
-import { useEffect, useState, use } from 'react'
+import { useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-export default function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params)
-  const userId = resolvedParams.id
+export default function UserProfilePage() {
+  const params = useParams()
   const router = useRouter()
+  const userId = params.id as string
 
   const [profile, setProfile] = useState<any>(null)
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [userRecipes, setUserRecipes] = useState<any[]>([])
-  const [bookmarkedRecipes, setBookmarkedRecipes] = useState<any[]>([])
-  const [activeTab, setActiveTab] = useState<'recipes' | 'bookmarks'>('recipes')
+  const [recipes, setRecipes] = useState<any[]>([])
+  const [bookmarks, setBookmarks] = useState<any[]>([])
+  const [activeTab, setActiveTab] = useState<'posted' | 'bookmarked'>('posted')
   const [loading, setLoading] = useState(true)
 
-  const [isEditing, setIsEditing] = useState(false)
-  const [username, setUsername] = useState('')
-  const [bio, setBio] = useState('')
-  const [avatarUrl, setAvatarUrl] = useState('')
+  // バルマの投稿レシピに対するアンケート集計結果
+  const [userTasteStats, setUserTasteStats] = useState<{
+    count: number
+    avgTaste: number
+    avgEffort: number
+    avgIngredients: number
+    avgSpiciness: number
+    avgStyle: number
+  }>({
+    count: 0,
+    avgTaste: 3,
+    avgEffort: 3,
+    avgIngredients: 3,
+    avgSpiciness: 3,
+    avgStyle: 3,
+  })
 
   useEffect(() => {
-    const stored = localStorage.getItem('namaste_user')
-    if (stored) {
-      setCurrentUser(JSON.parse(stored))
+    if (userId) {
+      loadUserData()
     }
-
-    async function fetchUserData() {
-      setLoading(true)
-
-      const { data: prof } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-
-      if (prof) {
-        setProfile(prof)
-        setUsername(prof.username || '')
-        setBio(prof.bio || '')
-        setAvatarUrl(prof.avatar_url || '')
-      }
-
-      const { data: recs } = await supabase
-        .from('recipes')
-        .select('*')
-        .eq('profile_id', userId)
-        .order('created_at', { ascending: false })
-
-      if (recs) setUserRecipes(recs)
-
-      const { data: bmRows } = await supabase
-        .from('recipe_bookmarks')
-        .select('recipe_id')
-        .eq('profile_id', userId)
-
-      if (bmRows && bmRows.length > 0) {
-        const bmIds = bmRows.map((b) => b.recipe_id)
-        const { data: bmRecipes } = await supabase
-          .from('recipes')
-          .select('*')
-          .in('id', bmIds)
-        if (bmRecipes) setBookmarkedRecipes(bmRecipes)
-      }
-
-      setLoading(false)
-    }
-
-    fetchUserData()
   }, [userId])
 
-  const handleUpdateProfile = async (e: React.FormEvent) => {
-    e.preventDefault()
-    try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ username, bio, avatar_url: avatarUrl })
-        .eq('id', userId)
+  async function loadUserData() {
+    setLoading(true)
 
-      if (error) throw error
+    // 1. プロフィールデータ取得
+    const { data: pData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
 
-      setProfile((prev: any) => ({ ...prev, username, bio, avatar_url: avatarUrl }))
-      if (currentUser && currentUser.id === userId) {
-        const updatedUser = { ...currentUser, username, bio, avatar_url: avatarUrl }
-        localStorage.setItem('namaste_user', JSON.stringify(updatedUser))
-        setCurrentUser(updatedUser)
+    setProfile(pData)
+
+    // 2. 投稿レシピ取得
+    const { data: rData } = await supabase
+      .from('recipes')
+      .select('*')
+      .eq('profile_id', userId)
+      .order('created_at', { ascending: false })
+
+    const userRecipes = rData || []
+    setRecipes(userRecipes)
+
+    // 3. 投稿レシピに対するアンケート評価データを自動集計
+    if (userRecipes.length > 0) {
+      const recipeIds = userRecipes.map((r) => r.id)
+      const { data: eData } = await supabase
+        .from('recipe_evaluations')
+        .select('*')
+        .in('recipe_id', recipeIds)
+
+      if (eData && eData.length > 0) {
+        const total = eData.length
+        const calcAvg = (key: string) =>
+          Math.round((eData.reduce((sum, item) => sum + (item[key] || 3), 0) / total) * 10) / 10
+
+        setUserTasteStats({
+          count: total,
+          avgTaste: calcAvg('score_taste'),
+          avgEffort: calcAvg('score_effort'),
+          avgIngredients: calcAvg('score_ingredients'),
+          avgSpiciness: calcAvg('score_spiciness'),
+          avgStyle: calcAvg('score_style'),
+        })
       }
-      setIsEditing(false)
-      alert('プロフィールを更新しました！')
-    } catch (err: any) {
-      alert('更新エラー: ' + err.message)
     }
+
+    // 4. お気に入りレシピ取得
+    const { data: bData } = await supabase
+      .from('recipe_bookmarks')
+      .select('recipe_id, recipes(*)')
+      .eq('profile_id', userId)
+
+    if (bData) {
+      setBookmarks(bData.map((b) => b.recipes).filter(Boolean))
+    }
+
+    setLoading(false)
   }
 
-  const isOwner = currentUser && currentUser.id === userId
+  // スコアのバー表示用コンポーネント
+  const ScoreBar = ({ label, value, minLabel, maxLabel }: { label: string; value: number; minLabel: string; maxLabel: string }) => (
+    <div className="space-y-1 text-xs">
+      <div className="flex justify-between items-center font-bold text-slate-700">
+        <span>{label}</span>
+        <span className="text-amber-600 font-black">{value} <span className="text-[10px] text-slate-400 font-normal">/ 5</span></span>
+      </div>
+      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
+        <div
+          className="bg-amber-500 h-full rounded-full transition-all duration-500"
+          style={{ width: `${(value / 5) * 100}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-[10px] text-slate-400">
+        <span>{minLabel}</span>
+        <span>{maxLabel}</span>
+      </div>
+    </div>
+  )
 
   if (loading) {
-    return <div className="min-h-screen bg-amber-50 p-10 text-center text-slate-500 text-xs">読み込み中...</div>
-  }
-
-  if (!profile) {
-    return <div className="min-h-screen bg-amber-50 p-10 text-center text-slate-500 text-xs">ユーザーが見つかりません。</div>
+    return (
+      <main className="min-h-screen bg-amber-50/50 p-6 flex justify-center items-center text-slate-600 font-bold">
+        バルマ情報を読み込み中... 👳‍♂️
+      </main>
+    )
   }
 
   return (
-    <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10 space-y-8">
+    <main className="min-h-screen bg-amber-50/50 p-4 md:p-8 font-sans">
       <div className="max-w-4xl mx-auto space-y-6">
-        
-        <Link href="/" className="text-xs font-bold text-amber-800 hover:underline inline-block">
+
+        {/* 戻るリンク */}
+        <button
+          onClick={() => router.back()}
+          className="text-amber-700 hover:text-amber-800 text-xs font-bold flex items-center gap-1 transition"
+        >
           ← レシピ一覧に戻る
-        </Link>
+        </button>
 
-        {/* プロフィールカード */}
-        <div className="bg-white rounded-3xl p-6 md:p-8 border border-amber-200 shadow-sm space-y-6">
-          <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-6">
-            <div className="flex flex-col sm:flex-row items-center gap-5 text-center sm:text-left">
-              <div className="w-20 h-20 rounded-full bg-amber-100 overflow-hidden border-2 border-amber-300 flex items-center justify-center text-3xl shrink-0">
-                {profile.avatar_url ? (
-                  <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
-                ) : (
-                  <span>👳‍♂️</span>
-                )}
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-center sm:justify-start gap-2">
-                  <h1 className="text-xl font-black text-slate-900">{profile.username}</h1>
-                  <span className="text-xs font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-300">
-                    {profile.rank || '見習い'}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">{profile.bio || '自己紹介文はまだ設定されていません。'}</p>
-              </div>
+        {/* バルマ基本情報ヘッダー */}
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-amber-100/80 space-y-6">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center text-3xl border-2 border-amber-200 shadow-inner">
+              👳‍♂️
             </div>
-
-            {isOwner && (
-              <button
-                onClick={() => setIsEditing(!isEditing)}
-                className="text-xs font-bold bg-amber-100 hover:bg-amber-200 text-amber-900 px-4 py-2 rounded-xl transition border border-amber-300 active:scale-95 whitespace-nowrap"
-              >
-                ✏️ プロフィール編集
-              </button>
-            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-black text-slate-800">{profile?.username || 'たかのり'}</h1>
+                <span className="bg-amber-100 text-amber-800 text-xs px-3 py-1 rounded-full font-bold border border-amber-200">
+                  {profile?.balma_rank || '見習い'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {profile?.bio || '自己紹介文はまだ設定されていません。'}
+              </p>
+            </div>
           </div>
 
-          {/* 編集フォーム */}
-          {isEditing && (
-            <form onSubmit={handleUpdateProfile} className="bg-amber-50/50 p-5 rounded-2xl border border-amber-200 space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-amber-900 block mb-1">ユーザー名</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full p-2.5 rounded-xl border border-amber-200 bg-white"
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* アカウント活動状況 */}
+            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-100 space-y-3">
+              <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <span>⏱️</span> アカウント活動状況
+              </h3>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[11px]">投稿レシピ数:</span>
+                  <p className="font-bold text-slate-800 text-sm">{recipes.length} 件</p>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[11px]">最終ログイン:</span>
+                  <p className="font-bold text-slate-800 text-sm">
+                    {profile?.last_login_at
+                      ? new Date(profile.last_login_at).toLocaleDateString('ja-JP')
+                      : '2026/10/3'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <label className="font-bold text-amber-900 block mb-1">自己紹介</label>
-                <textarea
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl border border-amber-200 bg-white"
-                />
-              </div>
-              <div>
-                <label className="font-bold text-amber-900 block mb-1">アバター画像URL</label>
-                <input
-                  type="text"
-                  value={avatarUrl}
-                  onChange={(e) => setAvatarUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full p-2.5 rounded-xl border border-amber-200 bg-white"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-bold"
-                >
-                  キャンセル
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700"
-                >
-                  保存する
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* アカウント活動状況のみ（ランク昇格ステータスは完全に非表示） */}
-          <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 space-y-2 text-xs">
-            <div className="font-bold text-amber-900 flex items-center gap-1.5">
-              <span>⏱️</span> アカウント活動状況
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-600 pt-1">
-              <div>投稿レシピ数: <strong className="text-slate-800">{userRecipes.length} 件</strong></div>
-              <div>最終ログイン: <strong className="text-slate-800">{profile.last_login_at ? new Date(profile.last_login_at).toLocaleDateString() : '記録なし'}</strong></div>
+
+            {/* 投稿レシピの平均傾向（アンケート自動集計） */}
+            <div className="bg-amber-50/50 rounded-2xl p-4 border border-amber-100 space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span>🍛</span> このバルマのカレーの傾向
+                </h3>
+                <span className="text-[10px] text-slate-400 font-bold">
+                  ({userTasteStats.count}件のレシピ評価に基づく)
+                </span>
+              </div>
+
+              {userTasteStats.count === 0 ? (
+                <p className="text-xs text-slate-400 py-2">
+                  まだ投稿レシピへの評価が集まっていません。
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  <ScoreBar
+                    label="本格度・味わい"
+                    value={userTasteStats.avgTaste}
+                    minLabel="家庭的"
+                    maxLabel="本格的"
+                  />
+                  <ScoreBar
+                    label="調理の手間"
+                    value={userTasteStats.avgEffort}
+                    minLabel="時短・手軽"
+                    maxLabel="本格仕込み"
+                  />
+                  <ScoreBar
+                    label="辛さレベル"
+                    value={userTasteStats.avgSpiciness}
+                    minLabel="マイルド"
+                    maxLabel="激辛"
+                  />
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* レシピ一覧タブ */}
-        <div className="space-y-4">
-          <div className="flex gap-2 border-b border-amber-200 pb-3">
-            <button
-              onClick={() => setActiveTab('recipes')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'recipes' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-amber-200'
-              }`}
-            >
-              🍛 投稿したレシピ ({userRecipes.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('bookmarks')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
-                activeTab === 'bookmarks' ? 'bg-amber-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-amber-200'
-              }`}
-            >
-              ⭐ お気に入りレシピ ({bookmarkedRecipes.length})
-            </button>
-          </div>
+        {/* タブ切り替え（投稿レシピ / お気に入りレシピ） */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setActiveTab('posted')}
+            className={`px-5 py-2.5 rounded-full text-xs font-bold transition ${
+              activeTab === 'posted'
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            🍛 投稿したレシピ ({recipes.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('bookmarked')}
+            className={`px-5 py-2.5 rounded-full text-xs font-bold transition ${
+              activeTab === 'bookmarked'
+                ? 'bg-amber-500 text-white shadow-md'
+                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            ⭐ お気に入りレシピ ({bookmarks.length})
+          </button>
+        </div>
 
-          {activeTab === 'recipes' ? (
-            userRecipes.length === 0 ? (
-              <div className="bg-white rounded-3xl p-10 text-center text-xs text-slate-500 border border-amber-200">
-                まだ投稿されたレシピはありません。
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {userRecipes.map((r) => (
-                  <Link key={r.id} href={`/recipes/${r.id}`} className="block group">
-                    <div className="bg-white rounded-3xl p-5 border border-amber-100 shadow-sm group-hover:shadow-md transition">
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
-                        {r.genre}
-                      </span>
-                      <h3 className="font-bold text-base text-slate-900 group-hover:text-amber-700 mt-1 truncate">
-                        {r.title}
-                      </h3>
-                      <p className="text-xs text-slate-500 truncate mt-0.5">{r.description || '説明なし'}</p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )
-          ) : bookmarkedRecipes.length === 0 ? (
-            <div className="bg-white rounded-3xl p-10 text-center text-xs text-slate-500 border border-amber-200">
-              お気に入り保存したレシピはありません。
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {bookmarkedRecipes.map((r) => (
-                <Link key={r.id} href={`/recipes/${r.id}`} className="block group">
-                  <div className="bg-white rounded-3xl p-5 border border-amber-100 shadow-sm group-hover:shadow-md transition">
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
-                      {r.genre}
-                    </span>
-                    <h3 className="font-bold text-base text-slate-900 group-hover:text-amber-700 mt-1 truncate">
-                      {r.title}
-                    </h3>
-                    <p className="text-xs text-slate-500 truncate mt-0.5">{r.description || '説明なし'}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
+        {/* レシピカード一覧 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {(activeTab === 'posted' ? recipes : bookmarks).map((r) => (
+            <Link
+              key={r.id}
+              href={`/recipes/${r.id}`}
+              className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition space-y-2 block"
+            >
+              <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                {r.genre}
+              </span>
+              <h3 className="font-bold text-slate-800 text-sm">{r.title}</h3>
+              <p className="text-xs text-slate-500 line-clamp-2">{r.description}</p>
+            </Link>
+          ))}
         </div>
 
       </div>
