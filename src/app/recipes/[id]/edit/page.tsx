@@ -16,11 +16,13 @@ export default function EditRecipePage({
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+  const [profileId, setProfileId] = useState('')
   const [title, setTitle] = useState('')
   const [genre, setGenre] = useState('スパイスカレー')
   const [authorName, setAuthorName] = useState('')
   const [description, setDescription] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
 
   const [ingredients, setIngredients] = useState<any[]>([])
   const [steps, setSteps] = useState<string[]>([])
@@ -42,11 +44,15 @@ export default function EditRecipePage({
         return
       }
 
+      setProfileId(recipe.profile_id || '')
       setTitle(recipe.title || '')
       setGenre(recipe.genre || 'スパイスカレー')
       setAuthorName(recipe.author_name || '')
       setDescription(recipe.description || '')
-      setImageUrl(recipe.image_url || '')
+
+      // 過去に保存されたローカル専用URL（blob:やdata:）を弾いて綺麗にする
+      const rawImg = recipe.image_url || ''
+      setImageUrl(rawImg.startsWith('blob:') || rawImg.startsWith('data:') ? '' : rawImg)
 
       const { data: ingData } = await supabase
         .from('recipe_ingredients')
@@ -141,6 +147,7 @@ export default function EditRecipePage({
       e.target.value = ''
       return
     }
+    setImageFile(file)
     setImageUrl(URL.createObjectURL(file))
   }
 
@@ -149,6 +156,29 @@ export default function EditRecipePage({
     setSubmitting(true)
 
     try {
+      let finalImageUrl = imageUrl
+
+      // 画像が新しく選択された場合のみSupabase Storageへアップロードを実行
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop()
+        const fileName = `${Math.random()}.${fileExt}`
+        const filePath = `recipes/${fileName}`
+
+        const { error: uploadError } = await supabase.storage
+          .from('recipe-images')
+          .upload(filePath, imageFile)
+
+        if (uploadError) {
+          throw new Error('画像のアップロードに失敗しました: ' + uploadError.message)
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from('recipe-images')
+          .getPublicUrl(filePath)
+
+        finalImageUrl = publicUrlData.publicUrl
+      }
+
       const { error: recipeError } = await supabase
         .from('recipes')
         .update({
@@ -156,7 +186,7 @@ export default function EditRecipePage({
           genre,
           author_name: authorName,
           description,
-          image_url: imageUrl || null,
+          image_url: finalImageUrl || null,
         })
         .eq('id', id)
 
@@ -186,7 +216,12 @@ export default function EditRecipePage({
       }
 
       alert('レシピを更新しました！')
-      router.push(`/recipes/${id}`)
+      
+      if (profileId) {
+        router.push(`/users/${profileId}`)
+      } else {
+        router.push(`/recipes/${id}`)
+      }
       router.refresh()
     } catch (err: any) {
       alert('更新に失敗しました: ' + err.message)

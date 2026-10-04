@@ -235,6 +235,10 @@ export default function HomePage() {
 
   const getBaseRecipes = () => {
     if (activeTab === 'bookmarks') return bookmarkedRecipes
+    if (activeTab === 'following') {
+      const followingNames = followingUsers.map(u => u.username)
+      return recipes.filter(r => followingNames.includes(r.author_name))
+    }
     return recipes
   }
 
@@ -317,8 +321,8 @@ export default function HomePage() {
       </header>
 
       {/* メインヒーロー */}
-      <section className="max-w-4xl mx-auto bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-3xl p-6 md:p-10 shadow-md flex flex-col md:flex-row justify-between items-center gap-6">
-        <div className="space-y-3 text-center md:text-left min-h-[100px] flex flex-col justify-center">
+      <section className="max-w-4xl mx-auto bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-3xl p-6 md:p-10 shadow-md flex flex-col md:flex-row justify-between items-center md:items-center gap-6">
+        <div className="space-y-3 text-left min-h-[100px] flex flex-col w-full md:w-auto">
           <div key={heroMsgIndex} className="animate-fade-in-out">
             <h2 className="text-2xl md:text-3xl font-black leading-tight">
               {heroMessages[heroMsgIndex]}
@@ -332,7 +336,7 @@ export default function HomePage() {
         <Link
           href="/recipes/new"
           onClick={handleNewRecipeClick}
-          className="bg-white text-amber-900 font-black text-sm py-3.5 px-8 rounded-2xl shadow-lg hover:bg-amber-50 transition transform hover:-translate-y-0.5 active:scale-95 shrink-0"
+          className="bg-white text-amber-900 font-black text-sm py-3.5 px-8 rounded-2xl shadow-lg hover:bg-amber-50 transition transform hover:-translate-y-0.5 active:scale-95 shrink-0 mx-auto md:mx-0"
         >
           🍛 レシピを投稿する
         </Link>

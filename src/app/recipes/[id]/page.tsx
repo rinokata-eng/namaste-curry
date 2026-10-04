@@ -232,7 +232,7 @@ export default function RecipeDetailPage({
     if (saveErr) {
       alert('評価の保存に失敗しました: ' + saveErr.message)
     } else {
-      alert(hasEvaluated ? 'レシピの印象傾向を更新（上書き）しました！👳‍♂️' : 'レシピの印象傾向を送信しました！👳‍♂️')
+      alert(hasEvaluated ? '感想を修正しました！👳‍♂️' : '感想を届けました！👳‍♂️')
       setHasEvaluated(true)
 
       const newPayload = { recipe_id: id, profile_id: currentUser.id, ...userEval }
@@ -269,6 +269,8 @@ export default function RecipeDetailPage({
       </main>
     )
   }
+
+  const isMyRecipe = currentUser && (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username)
 
   return (
     <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10 relative">
@@ -371,7 +373,7 @@ export default function RecipeDetailPage({
             <div className="flex justify-between items-center border-b border-amber-200 pb-2">
               <div>
                 <h3 className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
-                  <span>📊</span> バルマたちのレシピ印象・傾向
+                  <span>💬</span> みんなの感想
                 </h3>
                 <p className="text-[11px] text-slate-500">（回答数: {evaluations.length}件）</p>
               </div>
@@ -386,56 +388,73 @@ export default function RecipeDetailPage({
                     <span className="font-bold text-amber-900">{item.label} ({item.val})</span>
                     <span>{item.right}</span>
                   </div>
-                  <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden relative">
+                  <div className="w-full h-2.5 bg-slate-200 rounded-full relative overflow-visible mt-2">
                     <div
-                      className="h-full bg-amber-500 rounded-full transition-all duration-300"
-                      style={{ width: `${((item.val - 1) / 4) * 100}%` }}
-                    />
+                      className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 text-xl transition-all duration-500 drop-shadow-md z-10"
+                      style={{ left: `${((item.val - 1) / 4) * 100}%` }}
+                    >
+                      🍛
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
 
             {/* アンケート回答フォーム */}
-            <div className="pt-4 border-t border-amber-200 space-y-4">
-              <h4 className="text-xs font-bold text-amber-900">
-                {hasEvaluated ? '✏️ あなたの入力した印象傾向（何度でも変更可能）' : '✏️ このレシピの印象傾向を教えてください'}
-              </h4>
+            {currentUser ? (
+              isMyRecipe ? (
+                <div className="pt-4 border-t border-amber-200 text-center text-xs text-slate-500 py-3">
+                  ご自身の投稿レシピには感想を送ることができません 👳‍♂️
+                </div>
+              ) : (
+                <div className="pt-4 border-t border-amber-200 space-y-4">
+                  <h4 className="text-xs font-bold text-amber-900">
+                    {hasEvaluated ? '✏️ あなたの届けた感想' : '✏️ このレシピの感想を届けてください'}
+                  </h4>
 
-              <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100 text-xs">
-                {evalCategories.map((row, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-2">
-                    <span className="w-28 text-right font-medium text-slate-600 text-[11px] shrink-0">{row.left}</span>
-                    <div className="flex gap-2 flex-1 justify-center">
-                      {[1, 2, 3, 4, 5].map((num) => (
-                        <button
-                          key={num}
-                          type="button"
-                          onClick={() => setUserEval({ ...userEval, [row.key]: num })}
-                          className={`w-7 h-7 rounded-full font-bold text-xs transition-all ${
-                            (userEval as any)[row.key] === num
-                              ? 'bg-amber-600 text-white shadow-sm scale-110'
-                              : 'bg-slate-100 text-slate-600 hover:bg-amber-100'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
-                    </div>
-                    <span className="w-28 text-left font-medium text-slate-600 text-[11px] shrink-0">{row.right}</span>
+                  <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100 text-xs overflow-x-auto whitespace-nowrap scrollbar-hide">
+                    {evalCategories.map((row, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-2">
+                        <span className="w-28 text-right font-medium text-slate-600 text-[11px] shrink-0">{row.left}</span>
+                        <div className="flex gap-2 flex-1 justify-center">
+                          {[1, 2, 3, 4, 5].map((num) => (
+                            <button
+                              key={num}
+                              type="button"
+                              onClick={() => setUserEval({ ...userEval, [row.key]: num })}
+                              className={`w-7 h-7 rounded-full font-bold text-xs transition-all ${
+                                (userEval as any)[row.key] === num
+                                  ? 'bg-amber-600 text-white shadow-sm scale-110'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-amber-100'
+                              }`}
+                            >
+                              {num}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="w-28 text-left font-medium text-slate-600 text-[11px] shrink-0">{row.right}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <button
-                type="button"
-                onClick={handleSaveEvaluation}
-                disabled={isSubmittingEval}
-                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all disabled:opacity-50"
-              >
-                {isSubmittingEval ? '送信中...' : hasEvaluated ? '評価傾向を更新（上書き）する 👳‍♂️' : '評価傾向を送信する 👳‍♂️'}
-              </button>
-            </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveEvaluation}
+                    disabled={isSubmittingEval}
+                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all disabled:opacity-50"
+                  >
+                    {isSubmittingEval ? '送信中...' : hasEvaluated ? '感想を修正する 👳‍♂️' : '感想を届ける 👳‍♂️'}
+                  </button>
+                </div>
+              )
+            ) : (
+              <div className="pt-4 border-t border-amber-200 text-center text-xs text-slate-500 py-3">
+                <p>感想を届けるにはログインが必要です。</p>
+                <Link href="/login" className="text-amber-700 font-bold hover:underline mt-2 inline-block">
+                  🔑 ログイン画面へ
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </div>
