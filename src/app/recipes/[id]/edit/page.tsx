@@ -21,6 +21,7 @@ export default function EditRecipePage({
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
   const [title, setTitle] = useState('')
@@ -32,9 +33,11 @@ export default function EditRecipePage({
 
   const [ingredients, setIngredients] = useState<any[]>([])
   const [steps, setSteps] = useState<any[]>([])
-  const [imageUrl, setImageUrl] = useState('')
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string>('')
+
+  // メイン写真用状態管理
+  const [existingImageUrl, setExistingImageUrl] = useState('')
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null)
+  const [mainImagePreview, setMainImagePreview] = useState<string>('')
 
   const [draggedIngIdx, setDraggedIngIdx] = useState<number | null>(null)
   const [draggedStepIdx, setDraggedStepIdx] = useState<number | null>(null)
@@ -74,7 +77,8 @@ export default function EditRecipePage({
       setGenre(recipe.genre || 'スパイスカレー')
       setDescription(recipe.description || '')
       setServings(recipe.servings || '2人分')
-      setImageUrl(recipe.image_url || '')
+      setExistingImageUrl(recipe.image_url || '')
+      setMainImagePreview(recipe.image_url || '')
 
       if (recipe.feature_type) {
         setSelectedFeatureTypes(recipe.feature_type.split(','))
@@ -89,8 +93,8 @@ export default function EditRecipePage({
         setIngredients(ingData.map(i => ({
           name: i.ingredient_name || i.name || '',
           amount: i.quantity || i.amount || '',
-          amazon_url: i.amazon_url || i.link_url || '',
-          rakuten_url: i.rakuten_url || '',
+          amazon_url: i.amazon_url || (i.link_url && i.link_url.includes('amazon') ? i.link_url : ''),
+          rakuten_url: i.rakuten_url || (i.link_url && i.link_url.includes('rakuten') ? i.link_url : ''),
           is_featured: i.is_featured || false,
         })))
       } else {
@@ -101,12 +105,12 @@ export default function EditRecipePage({
         setSteps(stepData.map(s => ({
           instruction: s.instruction || s.step_description || '',
           is_featured: s.is_featured || false,
-          image_url: s.image_url || '',
+          existing_image_url: s.image_url || '',
           imageFile: null,
           imagePreview: s.image_url || '',
         })))
       } else {
-        setSteps([{ instruction: '', is_featured: true, imageFile: null, imagePreview: '' }])
+        setSteps([{ instruction: '', is_featured: true, imageFile: null, imagePreview: '', existing_image_url: '' }])
       }
 
       setLoading(false)
@@ -173,7 +177,32 @@ export default function EditRecipePage({
   }
 
   const handleAddStep = (isFeatured = false) => {
-    setSteps([...steps, { instruction: '', is_featured: isFeatured, imageFile: null, imagePreview: '' }])
+    setSteps([...steps, { instruction: '', is_featured: isFeatured, imageFile: null, imagePreview: '', existing_image_url: '' }])
+  }
+
+  const handleDeleteRecipe = async () => {
+    if (!confirm('本当にこのレシピを削除しますか？\n削除すると元に戻せません 👳‍♂️')) {
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
+      await supabase.from('recipe_steps').delete().eq('recipe_id', id)
+      await supabase.from('recipe_likes').delete().eq('recipe_id', id)
+      await supabase.from('recipe_bookmarks').delete().eq('recipe_id', id)
+      await supabase.from('recipe_evaluations').delete().eq('recipe_id', id)
+
+      const { error } = await supabase.from('recipes').delete().eq('id', id)
+      if (error) throw error
+
+      alert('レシピを削除しました。')
+      router.push(currentUser ? `/users/${currentUser.id}` : '/')
+    } catch (err: any) {
+      alert('削除エラー: ' + err.message)
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -194,20 +223,23 @@ export default function EditRecipePage({
     setIsSubmitting(true)
 
     try {
-      let finalImageUrl = imageUrl
-      if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop()
-        const fileName = `main_${Date.now()}_${Math.random()}.${fileExt}`
+      // 1. メイン画像の更新判定（新規ファイルがあればアップロード、削除されたらnull、そのままなら既存URL）
+      let finalImageUrl = existingImageUrl
+      if (mainImageFile) {
+        const fileExt = mainImageFile.name.split('.').pop()
+        const fileName = `main_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `recipes/${fileName}`
 
         const { error: uploadError } = await supabase.storage
           .from('recipe-images')
-          .upload(filePath, imageFile)
+          .upload(filePath, mainImageFile)
 
         if (!uploadError) {
           const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
           finalImageUrl = data.publicUrl
         }
+      } else if (!mainImagePreview) {
+        finalImageUrl = ''
       }
 
       const combinedFeatureType = selectedFeatureTypes.join(',')
@@ -219,14 +251,14 @@ export default function EditRecipePage({
           genre,
           description,
           servings,
-          image_url: finalImageUrl,
+          image_url: finalImageUrl || null,
           feature_type: combinedFeatureType || null,
         })
         .eq('id', id)
 
       if (updateError) throw updateError
 
-      // 材料再挿入（双方のカラム名を送信して確実に保存）
+      // 2. 材料削除＆再挿入
       await supabase.from('recipe_ingredients').delete().eq('recipe_id', id)
       const validIngredients = ingredients.filter(i => i.name.trim())
       if (validIngredients.length > 0) {
@@ -242,28 +274,20 @@ export default function EditRecipePage({
           is_featured: i.is_featured || false,
         }))
 
-        const { error: ingErr } = await supabase.from('recipe_ingredients').insert(ingPayload)
-        if (ingErr) {
-          await supabase.from('recipe_ingredients').insert(
-            validIngredients.map(i => ({
-              recipe_id: id,
-              ingredient_name: i.name,
-              quantity: i.amount,
-            }))
-          )
-        }
+        await supabase.from('recipe_ingredients').insert(ingPayload)
       }
 
-      // 手順再挿入
+      // 3. 手順削除＆再挿入 (手順画像も維持・更新を正確に制御)
       await supabase.from('recipe_steps').delete().eq('recipe_id', id)
-      const validSteps = steps.filter(s => s.instruction.trim() || s.imageFile || s.image_url)
+      const validSteps = steps.filter(s => s.instruction.trim() || s.imageFile || s.imagePreview || s.existing_image_url)
+      
       for (let idx = 0; idx < validSteps.length; idx++) {
         const st = validSteps[idx]
-        let stepImageUrl = st.image_url || ''
+        let stepImageUrl = st.existing_image_url || ''
 
         if (st.imageFile) {
           const fileExt = st.imageFile.name.split('.').pop()
-          const fileName = `step_${id}_${idx}_${Date.now()}.${fileExt}`
+          const fileName = `step_${id}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
           const filePath = `recipes/${fileName}`
 
           const { error: stepImgErr } = await supabase.storage
@@ -274,6 +298,8 @@ export default function EditRecipePage({
             const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
             stepImageUrl = data.publicUrl
           }
+        } else if (!st.imagePreview) {
+          stepImageUrl = ''
         }
 
         const stepPayload = {
@@ -285,19 +311,11 @@ export default function EditRecipePage({
           image_url: stepImageUrl || null,
         }
 
-        const { error: stErr } = await supabase.from('recipe_steps').insert([stepPayload])
-        if (stErr) {
-          await supabase.from('recipe_steps').insert([{
-            recipe_id: id,
-            step_number: idx + 1,
-            step_description: st.instruction,
-            image_url: stepImageUrl || null,
-          }])
-        }
+        await supabase.from('recipe_steps').insert([stepPayload])
       }
 
       alert('レシピを更新しました！👳‍♂️')
-      router.push(`/users/${currentUser.id}`)
+      router.push(`/recipes/${id}`)
     } catch (err: any) {
       alert('更新エラー: ' + err.message)
     } finally {
@@ -317,9 +335,19 @@ export default function EditRecipePage({
         </button>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-amber-200 space-y-6">
-          <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 border-b border-amber-100 pb-4">
-            <span>✏️</span> レシピを編集する
-          </h1>
+          <div className="flex justify-between items-center border-b border-amber-100 pb-4">
+            <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
+              <span>✏️️</span> レシピを編集する
+            </h1>
+            <button
+              type="button"
+              onClick={handleDeleteRecipe}
+              disabled={isDeleting}
+              className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-xl border border-red-200 transition cursor-pointer"
+            >
+              {isDeleting ? '削除中...' : '🗑️ レシピを削除'}
+            </button>
+          </div>
 
           <div className="space-y-4">
             <div>
@@ -396,6 +424,7 @@ export default function EditRecipePage({
             />
           </div>
 
+          {/* メイン写真編集 */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">完成写真</label>
             <input
@@ -404,19 +433,31 @@ export default function EditRecipePage({
               onChange={e => {
                 const f = e.target.files?.[0]
                 if (f) {
-                  setImageFile(f)
-                  setImagePreview(URL.createObjectURL(f))
+                  setMainImageFile(f)
+                  setMainImagePreview(URL.createObjectURL(f))
                 }
               }}
               className="text-xs text-slate-500"
             />
-            {(imagePreview || imageUrl) && (
-              <div className="mt-3 w-full h-48 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
-                <img src={imagePreview || imageUrl} alt="Preview" className="w-full h-full object-cover" />
+            {mainImagePreview && (
+              <div className="mt-3 relative w-full h-52 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200">
+                <img src={mainImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainImageFile(null)
+                    setMainImagePreview('')
+                    setExistingImageUrl('')
+                  }}
+                  className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-xs transition cursor-pointer"
+                >
+                  ✕ 写真を削除
+                </button>
               </div>
             )}
           </div>
 
+          {/* 材料 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
@@ -527,6 +568,7 @@ export default function EditRecipePage({
             </button>
           </div>
 
+          {/* 手順 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
@@ -604,9 +646,22 @@ export default function EditRecipePage({
                       }}
                       className="text-[11px] text-slate-500"
                     />
-                    {(st.imagePreview || st.image_url) && (
-                      <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0">
-                        <img src={st.imagePreview || st.image_url} alt="Step preview" className="w-full h-full object-cover" />
+                    {st.imagePreview && (
+                      <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                        <img src={st.imagePreview} alt="Step preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newArr = [...steps]
+                            newArr[idx].imageFile = null
+                            newArr[idx].imagePreview = ''
+                            newArr[idx].existing_image_url = ''
+                            setSteps(newArr)
+                          }}
+                          className="absolute top-0.5 right-0.5 bg-black/70 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center cursor-pointer"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
                   </div>
@@ -623,13 +678,15 @@ export default function EditRecipePage({
             </button>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
-          >
-            {isSubmitting ? '更新中...' : '変更を保存する 👳‍♂️'}
-          </button>
+          <div className="flex gap-3 border-t border-amber-100 pt-4">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+            >
+              {isSubmitting ? '更新中...' : '変更を保存する 👳‍♂️'}
+            </button>
+          </div>
         </form>
       </div>
     </main>

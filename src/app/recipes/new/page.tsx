@@ -117,11 +117,11 @@ export default function NewRecipePage() {
 
     for (const ing of ingredients) {
       if (ing.amazon_url && !validateUrl(ing.amazon_url, 'amazon')) {
-        alert(`「${ing.name || '材料'}」のAmazon URLが不正です。公式URLを入力してください。`)
+        alert(`「${ing.name || '材料'}」のAmazon URLが不正です。`)
         return
       }
       if (ing.rakuten_url && !validateUrl(ing.rakuten_url, 'rakuten')) {
-        alert(`「${ing.name || '材料'}」の楽天 URLが不正です。公式URLを入力してください。`)
+        alert(`「${ing.name || '材料'}」の楽天 URLが不正です。`)
         return
       }
     }
@@ -129,10 +129,11 @@ export default function NewRecipePage() {
     setLoading(true)
 
     try {
+      // 1. メイン画像のアップロード
       let mainImageUrl = ''
       if (mainImageFile) {
         const fileExt = mainImageFile.name.split('.').pop()
-        const fileName = `main_${Date.now()}_${Math.random()}.${fileExt}`
+        const fileName = `main_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
         const filePath = `recipes/${fileName}`
 
         const { error: uploadError } = await supabase.storage
@@ -142,11 +143,14 @@ export default function NewRecipePage() {
         if (!uploadError) {
           const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
           mainImageUrl = data.publicUrl
+        } else {
+          console.error('メイン画像アップロード失敗:', uploadError)
         }
       }
 
       const combinedFeatureType = selectedFeatureTypes.join(',')
 
+      // 2. レシピ本体の作成
       const { data: recipeData, error: recipeError } = await supabase
         .from('recipes')
         .insert([{
@@ -154,11 +158,10 @@ export default function NewRecipePage() {
           genre,
           description,
           servings,
-          image_url: mainImageUrl,
+          image_url: mainImageUrl || null,
           profile_id: currentUser.id,
           author_name: currentUser.username || '名無しバルマ',
           feature_type: combinedFeatureType || null,
-          rou_brand: null, // 旧テキストエリアを破棄
         }])
         .select()
         .single()
@@ -166,7 +169,7 @@ export default function NewRecipePage() {
       if (recipeError) throw recipeError
       const recipeId = recipeData.id
 
-      // 材料保存（全属性名を同時にセットしてNOT NULL制約を回避）
+      // 3. 材料保存
       const validIngredients = ingredients.filter(i => i.name.trim())
       if (validIngredients.length > 0) {
         const ingPayload = validIngredients.map(i => ({
@@ -181,14 +184,10 @@ export default function NewRecipePage() {
           is_featured: i.is_featured || false,
         }))
 
-        const { error: ingErr } = await supabase.from('recipe_ingredients').insert(ingPayload)
-        if (ingErr) {
-          console.error('材料挿入エラー:', ingErr)
-          alert('材料の保存でエラーが発生しました: ' + ingErr.message)
-        }
+        await supabase.from('recipe_ingredients').insert(ingPayload)
       }
 
-      // 手順保存（全属性名を同時にセットしてNOT NULL制約を回避）
+      // 4. 手順および手順画像の保存
       const validSteps = steps.filter(s => s.instruction.trim() || s.imageFile)
       for (let idx = 0; idx < validSteps.length; idx++) {
         const st = validSteps[idx]
@@ -196,7 +195,7 @@ export default function NewRecipePage() {
 
         if (st.imageFile) {
           const fileExt = st.imageFile.name.split('.').pop()
-          const fileName = `step_${recipeId}_${idx}_${Date.now()}.${fileExt}`
+          const fileName = `step_${recipeId}_${idx}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`
           const filePath = `recipes/${fileName}`
 
           const { error: stepImgErr } = await supabase.storage
@@ -206,6 +205,8 @@ export default function NewRecipePage() {
           if (!stepImgErr) {
             const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
             stepImageUrl = data.publicUrl
+          } else {
+            console.error(`手順${idx + 1}の画像アップロード失敗:`, stepImgErr)
           }
         }
 
@@ -218,11 +219,7 @@ export default function NewRecipePage() {
           image_url: stepImageUrl || null,
         }
 
-        const { error: stErr } = await supabase.from('recipe_steps').insert([stepPayload])
-        if (stErr) {
-          console.error('手順挿入エラー:', stErr)
-          alert('手順の保存でエラーが発生しました: ' + stErr.message)
-        }
+        await supabase.from('recipe_steps').insert([stepPayload])
       }
 
       alert('カレーレシピを投稿しました！👳‍♂️')
@@ -324,6 +321,7 @@ export default function NewRecipePage() {
             />
           </div>
 
+          {/* 完成写真選択＆プレビュー */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">完成写真</label>
             <input
@@ -339,12 +337,23 @@ export default function NewRecipePage() {
               className="text-xs text-slate-500"
             />
             {mainImagePreview && (
-              <div className="mt-3 w-full h-48 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200">
-                <img src={mainImagePreview} alt="Preview" className="w-full h-full object-cover" />
+              <div className="mt-3 relative w-full h-52 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200 group">
+                <img src={mainImagePreview} alt="完成写真プレビュー" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMainImageFile(null)
+                    setMainImagePreview('')
+                  }}
+                  className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-xs transition cursor-pointer"
+                >
+                  ✕ 削除
+                </button>
               </div>
             )}
           </div>
 
+          {/* 材料 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
@@ -455,6 +464,7 @@ export default function NewRecipePage() {
             </button>
           </div>
 
+          {/* 手順 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
@@ -533,8 +543,20 @@ export default function NewRecipePage() {
                       className="text-[11px] text-slate-500"
                     />
                     {st.imagePreview && (
-                      <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                      <div className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200 shrink-0">
                         <img src={st.imagePreview} alt="Step preview" className="w-full h-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newArr = [...steps]
+                            newArr[idx].imageFile = null
+                            newArr[idx].imagePreview = ''
+                            setSteps(newArr)
+                          }}
+                          className="absolute top-0.5 right-0.5 bg-black/70 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center"
+                        >
+                          ✕
+                        </button>
                       </div>
                     )}
                   </div>
