@@ -242,11 +242,15 @@ export default function HomePage() {
     return recipes
   }
 
+  // 検索条件（タイトル、説明文、作者名、こだわりタグ・特化テキスト）
   const filteredRecipes = getBaseRecipes().filter((r) => {
+    const q = searchQuery.toLowerCase()
     const matchesSearch =
-      r.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.author_name?.toLowerCase().includes(searchQuery.toLowerCase())
+      r.title?.toLowerCase().includes(q) ||
+      r.description?.toLowerCase().includes(q) ||
+      r.author_name?.toLowerCase().includes(q) ||
+      r.feature_type?.toLowerCase().includes(q) ||
+      r.feature_detail?.toLowerCase().includes(q)
 
     const matchesGenre = selectedGenre === 'すべて' || r.genre === selectedGenre
 
@@ -270,7 +274,6 @@ export default function HomePage() {
         </Link>
 
         <div className="flex items-center gap-3">
-          {/* ✨ バルマランク制度へのリンクボタン（追加部分） */}
           <Link
             href="/baluma-rank"
             className="text-xs font-bold text-amber-800 hover:text-amber-900 px-3.5 py-2 border border-amber-300 rounded-xl bg-amber-50/50 transition active:scale-95 flex items-center gap-1"
@@ -391,12 +394,28 @@ export default function HomePage() {
                         )}
                       </div>
                       <div className="space-y-2 flex-1 text-center md:text-left">
-                        <span className="inline-block text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                          {recipe.genre}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5 justify-center md:justify-start">
+                          <span className="inline-block text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                            {recipe.genre}
+                          </span>
+                          {recipe.feature_type && (
+                            <span className="bg-gradient-to-r from-amber-500 to-amber-600 text-white font-black text-[10px] px-2.5 py-0.5 rounded-md shadow-xs">
+                              🔥 {recipe.feature_type}
+                            </span>
+                          )}
+                        </div>
+
                         <h4 className="font-black text-xl text-slate-900 group-hover:text-amber-700 transition">
                           {recipe.title}
                         </h4>
+
+                        {/* 秘伝ポイント表示 */}
+                        {recipe.feature_detail && (
+                          <p className="text-xs font-bold text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200/60 inline-block">
+                            💡 {recipe.feature_detail}
+                          </p>
+                        )}
+
                         <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
                           {recipe.description || '説明文はまだありません。'}
                         </p>
@@ -491,7 +510,7 @@ export default function HomePage() {
         <div className="relative">
           <input
             type="text"
-            placeholder="🔍 レシピ名、スパイス、作者名で検索..."
+            placeholder="🔍 レシピ名、隠し味、こだわり（時短/スパイス等）、作者名で検索..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full border border-amber-200 rounded-2xl py-2.5 px-4 text-sm bg-amber-50/30 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -617,13 +636,29 @@ export default function HomePage() {
                       )}
                     </div>
                     <div className="space-y-1.5 min-w-0 flex-1">
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
-                        {recipe.genre}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">
+                          {recipe.genre}
+                        </span>
+                        {recipe.feature_type && (
+                          <span className="bg-amber-600 text-white font-bold text-[9px] px-2 py-0.5 rounded-md">
+                            🔥 {recipe.feature_type}
+                          </span>
+                        )}
+                      </div>
+
                       <h4 className="font-bold text-base text-slate-900 group-hover:text-amber-700 transition truncate">
                         {recipe.title}
                       </h4>
-                      <p className="text-xs text-slate-500 truncate">{recipe.description || '説明なし'}</p>
+
+                      {/* レシピカード上の秘伝テキスト枠 */}
+                      {recipe.feature_detail ? (
+                        <p className="text-[11px] font-bold text-amber-900 bg-amber-50 px-2 py-1 rounded border border-amber-200/60 truncate">
+                          💡 {recipe.feature_detail}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-500 truncate">{recipe.description || '説明なし'}</p>
+                      )}
                       
                       <div className="flex justify-between items-center text-xs pt-1 border-t border-slate-100 text-slate-400">
                         <span>👤 {recipe.author_name}</span>

@@ -23,18 +23,7 @@ export default function RecipeDetailPage({
   const [hasLiked, setHasLiked] = useState(false)
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
-
-  // 評価アンケート用 State
   const [evaluations, setEvaluations] = useState<any[]>([])
-  const [userEval, setUserEval] = useState({
-    score_taste: 3,
-    score_effort: 3,
-    score_ingredients: 3,
-    score_spiciness: 3,
-    score_style: 3,
-  })
-  const [hasEvaluated, setHasEvaluated] = useState(false)
-  const [isSubmittingEval, setIsSubmittingEval] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('namaste_user')
@@ -45,7 +34,6 @@ export default function RecipeDetailPage({
     }
 
     async function loadRecipeData() {
-      // レシピ基本情報取得
       const { data, error } = await supabase
         .from('recipes')
         .select('*')
@@ -56,20 +44,17 @@ export default function RecipeDetailPage({
         setRecipe(data)
         setLikesCount(data.likes_count || 0)
 
-        // PV カウントアップ (+1)
         await supabase
           .from('recipes')
           .update({ pv_count: (data.pv_count || 0) + 1 })
           .eq('id', id)
 
-        // 材料取得
         const { data: ingData } = await supabase
           .from('recipe_ingredients')
           .select('*')
           .eq('recipe_id', id)
         if (ingData) setIngredients(ingData)
 
-        // 手順取得
         const { data: stepData } = await supabase
           .from('recipe_steps')
           .select('*')
@@ -77,18 +62,13 @@ export default function RecipeDetailPage({
           .order('step_number', { ascending: true })
         if (stepData) setSteps(stepData)
 
-        // 評価アンケート一覧取得
         const { data: evalData } = await supabase
           .from('recipe_evaluations')
           .select('*')
           .eq('recipe_id', id)
-
-        if (evalData) {
-          setEvaluations(evalData)
-        }
+        if (evalData) setEvaluations(evalData)
 
         if (user) {
-          // いいね状態確認
           const { data: likeData } = await supabase
             .from('recipe_likes')
             .select('*')
@@ -97,7 +77,6 @@ export default function RecipeDetailPage({
             .maybeSingle()
           if (likeData) setHasLiked(true)
 
-          // お気に入り状態確認
           const { data: bmData } = await supabase
             .from('recipe_bookmarks')
             .select('*')
@@ -105,19 +84,6 @@ export default function RecipeDetailPage({
             .eq('user_id', user.id)
             .maybeSingle()
           if (bmData) setIsBookmarked(true)
-
-          // 自分の評価アンケート確認
-          const myEval = evalData?.find((e: any) => e.profile_id === user.id)
-          if (myEval) {
-            setHasEvaluated(true)
-            setUserEval({
-              score_taste: myEval.score_taste || 3,
-              score_effort: myEval.score_effort || 3,
-              score_ingredients: myEval.score_ingredients || 3,
-              score_spiciness: myEval.score_spiciness || 3,
-              score_style: myEval.score_style || 3,
-            })
-          }
         }
       }
       setLoading(false)
@@ -126,30 +92,14 @@ export default function RecipeDetailPage({
     loadRecipeData()
   }, [id])
 
-  // 平均評価スコアの計算
-  const calcAvg = (key: string) => {
-    if (evaluations.length === 0) return 3
-    const sum = evaluations.reduce((acc, item) => acc + (item[key] || 3), 0)
-    return Math.round((sum / evaluations.length) * 10) / 10
-  }
-
-  const avgTaste = calcAvg('score_taste')
-  const avgEffort = calcAvg('score_effort')
-  const avgIngredients = calcAvg('score_ingredients')
-  const avgSpiciness = calcAvg('score_spiciness')
-  const avgStyle = calcAvg('score_style')
-
   const requireLoginAction = () => {
     if (confirm('この機能を利用するにはバルマ（会員）登録またはログインが必要です。\nログイン画面へ移動しますか？')) {
       router.push('/login')
     }
   }
 
-  const handleToggleLike = async (e: React.MouseEvent) => {
-    if (!currentUser) {
-      requireLoginAction()
-      return
-    }
+  const handleToggleLike = async () => {
+    if (!currentUser) return requireLoginAction()
     if (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username) {
       alert('ご自身の投稿レシピには「いいね」できません 👳‍♂️')
       return
@@ -159,24 +109,19 @@ export default function RecipeDetailPage({
       const newCount = Math.max(0, likesCount - 1)
       setLikesCount(newCount)
       setHasLiked(false)
-
       await supabase.from('recipes').update({ likes_count: newCount }).eq('id', id)
       await supabase.from('recipe_likes').delete().eq('recipe_id', id).eq('user_id', currentUser.id)
     } else {
       const newCount = likesCount + 1
       setLikesCount(newCount)
       setHasLiked(true)
-
       await supabase.from('recipes').update({ likes_count: newCount }).eq('id', id)
       await supabase.from('recipe_likes').insert([{ recipe_id: id, user_id: currentUser.id }])
     }
   }
 
-  const handleToggleBookmark = async (e: React.MouseEvent) => {
-    if (!currentUser) {
-      requireLoginAction()
-      return
-    }
+  const handleToggleBookmark = async () => {
+    if (!currentUser) return requireLoginAction()
     if (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username) {
       alert('ご自身の投稿レシピは「お気に入り保存」できません 👳‍♂️')
       return
@@ -191,102 +136,61 @@ export default function RecipeDetailPage({
     }
   }
 
-  // アンケート送信（登録・上書き更新対応）
-  const handleSaveEvaluation = async () => {
-    if (!currentUser) {
-      requireLoginAction()
-      return
-    }
-
-    setIsSubmittingEval(true)
-
-    const { data: existing } = await supabase
-      .from('recipe_evaluations')
-      .select('id')
-      .eq('recipe_id', id)
-      .eq('profile_id', currentUser.id)
-      .maybeSingle()
-
-    let saveErr = null
-
-    if (existing) {
-      const { error } = await supabase
-        .from('recipe_evaluations')
-        .update({
-          ...userEval,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id)
-      saveErr = error
-    } else {
-      const { error } = await supabase
-        .from('recipe_evaluations')
-        .insert([{
-          recipe_id: id,
-          profile_id: currentUser.id,
-          ...userEval,
-        }])
-      saveErr = error
-    }
-
-    if (saveErr) {
-      alert('評価の保存に失敗しました: ' + saveErr.message)
-    } else {
-      alert(hasEvaluated ? '感想を修正しました！👳‍♂️' : '感想を届けました！👳‍♂️')
-      setHasEvaluated(true)
-
-      const newPayload = { recipe_id: id, profile_id: currentUser.id, ...userEval }
-      const updatedList = evaluations.filter(e => e.profile_id !== currentUser.id)
-      setEvaluations([...updatedList, newPayload])
-    }
-    setIsSubmittingEval(false)
+  const calcAvg = (key: string) => {
+    if (evaluations.length === 0) return 3
+    const sum = evaluations.reduce((acc, item) => acc + (item[key] || 3), 0)
+    return Math.round((sum / evaluations.length) * 10) / 10
   }
 
-  // 統一した軸ラベル定義
-  const evalCategories = [
-    { key: 'score_taste', label: '味のテイスト', left: '家庭的・親しみやすい', right: '本格的・スパイシー', val: avgTaste },
-    { key: 'score_effort', label: '調理の手間', left: '手軽・時短', right: '手が込んでいる', val: avgEffort },
-    { key: 'score_ingredients', label: '材料の入手', left: 'スーパーで揃う', right: '専門店・通販', val: avgIngredients },
-    { key: 'score_spiciness', label: '辛さレベル', left: 'マイルド・甘口', right: '激辛・スパイシー', val: avgSpiciness },
-    { key: 'score_style', label: '主食ペアリング', left: '日本米に合う', right: 'ナン・エスニック米', val: avgStyle },
-  ]
-
   if (loading) {
-    return (
-      <main className="min-h-screen bg-amber-50 p-10 flex justify-center items-center text-slate-500 text-sm">
-        レシピを読み込み中...
-      </main>
-    )
+    return <main className="min-h-screen bg-amber-50 p-10 text-center text-slate-500 text-sm">レシピを読み込み中...</main>
   }
 
   if (!recipe) {
     return (
       <main className="min-h-screen bg-amber-50 p-10 text-center space-y-4">
         <p className="text-slate-600">レシピが見つかりませんでした。</p>
-        <Link href="/" className="text-amber-700 font-bold hover:underline text-sm">
-          ← トップへ戻る
-        </Link>
+        <Link href="/" className="text-amber-700 font-bold hover:underline text-sm">← トップへ戻る</Link>
       </main>
     )
   }
 
-  const isMyRecipe = currentUser && (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username)
+  const typesArr = recipe.feature_type ? recipe.feature_type.split(',') : []
+  const isOwner = currentUser && (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username)
 
   return (
     <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10 relative">
       <GuestPromotionModal />
 
       <div className="max-w-3xl mx-auto space-y-6">
-        <Link href="/" className="text-sm font-bold text-amber-700 hover:text-amber-800">
-          ← レシピ一覧に戻る
-        </Link>
+        <div className="flex justify-between items-center">
+          <Link href="/" className="text-sm font-bold text-amber-700 hover:text-amber-800">
+            ← レシピ一覧に戻る
+          </Link>
+
+          {isOwner && (
+            <Link
+              href={`/recipes/${id}/edit`}
+              className="text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 px-3.5 py-1.5 rounded-xl shadow-xs transition"
+            >
+              ✏️ レシピを編集・削除
+            </Link>
+          )}
+        </div>
 
         <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-amber-200 space-y-6">
           <div className="flex flex-col sm:flex-row justify-between items-start gap-4 border-b border-amber-100 pb-4">
             <div className="space-y-2">
-              <span className="text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
-                {recipe.genre}
-              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold bg-amber-100 text-amber-800 px-3 py-1 rounded-full">
+                  {recipe.genre}
+                </span>
+                {typesArr.map((t: string) => (
+                  <span key={t} className="bg-amber-600 text-white font-bold text-[10px] px-2.5 py-0.5 rounded-full shadow-xs">
+                    🔥 {t}
+                  </span>
+                ))}
+              </div>
               <h1 className="text-2xl font-black text-slate-900">{recipe.title}</h1>
               <div className="text-xs text-slate-500 flex items-center gap-3">
                 <div>
@@ -305,16 +209,8 @@ export default function RecipeDetailPage({
             </div>
 
             <div className="flex gap-2 shrink-0">
-              <AnimatedBookmarkButton
-                isBookmarked={isBookmarked}
-                onClick={handleToggleBookmark}
-              />
-
-              <AnimatedLikeButton
-                likesCount={likesCount}
-                isLiked={hasLiked}
-                onClick={handleToggleLike}
-              />
+              <AnimatedBookmarkButton isBookmarked={isBookmarked} onClick={handleToggleBookmark} />
+              <AnimatedLikeButton likesCount={likesCount} isLiked={hasLiked} onClick={handleToggleLike} />
             </div>
           </div>
 
@@ -330,23 +226,88 @@ export default function RecipeDetailPage({
             </div>
           )}
 
-          {/* 🛒 材料 */}
+          {/* 🛒 材料 (分量 & Amazon/楽天リンク表示) */}
           <div className="space-y-3">
             <h2 className="text-sm font-black text-amber-900 flex items-center gap-1.5 border-b border-amber-200 pb-2">
               <span>🛒</span> 材料 ({recipe.servings || '2人分'})
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {ingredients.length > 0 ? (
-                ingredients.map((ing: any, idx: number) => (
-                  <div key={idx} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/60 flex justify-between items-center">
-                    <span className="font-medium text-slate-800">{ing.name || ing.ingredient_name}</span>
-                    <span className="font-bold text-slate-500">{ing.amount || ing.quantity || ''}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-400">材料情報はありません。</p>
-              )}
-            </div>
+
+            {ingredients.length === 0 ? (
+              <p className="text-slate-400 text-xs">材料情報はありません。</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                {ingredients.map((ing: any, idx: number) => {
+                  const ingName = ing.name || ing.ingredient_name || ''
+                  const ingAmount = ing.amount || ing.quantity || ''
+                  
+                  // リンク抽出の強化
+                  const rawAmazon = ing.amazon_url || ''
+                  const rawRakuten = ing.rakuten_url || ''
+                  const rawLink = ing.link_url || ''
+
+                  const amazonUrl = rawAmazon || (rawLink.includes('amazon') ? rawLink : '')
+                  const rakutenUrl = rawRakuten || (rawLink.includes('rakuten') ? rawLink : '')
+                  const otherLink = rawLink && !amazonUrl && !rakutenUrl ? rawLink : ''
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between gap-2.5 ${
+                        ing.is_featured
+                          ? 'bg-amber-100/90 border-amber-400 shadow-xs'
+                          : 'bg-slate-50 border-slate-200/60'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center gap-2">
+                        <span className="font-bold text-slate-800 flex items-center gap-1">
+                          {ing.is_featured && <span className="text-amber-600 font-black">🔥</span>}
+                          {ingName}
+                        </span>
+                        <span className="font-bold text-slate-600 shrink-0">
+                          {ingAmount ? ingAmount : <span className="text-slate-400 font-normal">適量</span>}
+                        </span>
+                      </div>
+
+                      {/* Amazon / 楽天 / 汎用購入ボタン */}
+                      {(amazonUrl || rakutenUrl || otherLink) && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-200/60">
+                          {amazonUrl && (
+                            <a
+                              href={amazonUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-black text-amber-950 bg-amber-300 hover:bg-amber-400 px-2.5 py-1 rounded-lg transition shadow-2xs"
+                            >
+                              <span>🛒</span> Amazonで見る ↗
+                            </a>
+                          )}
+                          {rakutenUrl && (
+                            <a
+                              href={rakutenUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-black text-white bg-red-600 hover:bg-red-700 px-2.5 py-1 rounded-lg transition shadow-2xs"
+                            >
+                              <span>🛍️</span> 楽天で見る ↗
+                            </a>
+                          )}
+                          {otherLink && (
+                            <a
+                              href={otherLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-800 bg-slate-200 hover:bg-slate-300 px-2.5 py-1 rounded-lg transition"
+                            >
+                              <span>🔗</span> 購入先リンク ↗
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* 👨‍🍳 作り方手順 */}
@@ -354,21 +315,49 @@ export default function RecipeDetailPage({
             <h2 className="text-sm font-black text-amber-900 flex items-center gap-1.5 border-b border-amber-200 pb-2">
               <span>👨‍🍳</span> 作り方手順
             </h2>
-            <div className="space-y-2 text-xs">
-              {steps.length > 0 ? (
-                steps.map((st: any, idx: number) => (
-                  <div key={idx} className="flex gap-3 bg-amber-50/40 p-3 rounded-xl border border-amber-100">
-                    <span className="font-bold text-amber-800 shrink-0">{st.step_number || idx + 1}.</span>
-                    <p className="text-slate-700 leading-relaxed">{st.instruction || st.step_description}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="text-slate-400">手順情報はありません。</p>
-              )}
-            </div>
+
+            {steps.length === 0 ? (
+              <p className="text-slate-400 text-xs">手順情報はありません。</p>
+            ) : (
+              <div className="space-y-3 text-xs">
+                {steps.map((st: any, idx: number) => {
+                  const instructionText = st.instruction || st.step_description || ''
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-2xl border space-y-2 ${
+                        st.is_featured
+                          ? 'bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-amber-400 shadow-sm'
+                          : 'bg-amber-50/40 border-amber-100'
+                      }`}
+                    >
+                      <div className="flex gap-3 items-start">
+                        <span className="font-black text-amber-800 shrink-0 text-sm">{st.step_number || idx + 1}.</span>
+                        <div className="space-y-1 flex-1">
+                          {st.is_featured && (
+                            <span className="inline-block bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-[9px] px-2 py-0.5 rounded-md mb-1 shadow-2xs">
+                              🔥 秘伝のこだわり手順
+                            </span>
+                          )}
+                          <p className={`leading-relaxed ${st.is_featured ? 'text-slate-900 font-bold text-xs' : 'text-slate-800 font-medium'}`}>
+                            {instructionText}
+                          </p>
+                        </div>
+                      </div>
+
+                      {st.image_url && (
+                        <div className="w-full h-48 rounded-xl overflow-hidden bg-slate-100 border border-amber-200 mt-2">
+                          <img src={st.image_url} alt={`Step ${idx + 1}`} className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
-          {/* 📊 レシピの印象・特徴アンケートセクション */}
+          {/* 📊 感想セクション */}
           <div className="bg-amber-50/80 rounded-2xl p-5 border border-amber-200/80 space-y-5">
             <div className="flex justify-between items-center border-b border-amber-200 pb-2">
               <div>
@@ -379,9 +368,12 @@ export default function RecipeDetailPage({
               </div>
             </div>
 
-            {/* 平均評価バー */}
             <div className="space-y-3 text-xs">
-              {evalCategories.map((item, idx) => (
+              {[
+                { label: '味のテイスト', left: '家庭的・親しみやすい', right: '本格的・スパイシー', val: calcAvg('score_taste') },
+                { label: '調理の手間', left: '手軽・時短', right: '手が込んでいる', val: calcAvg('score_effort') },
+                { label: '辛さレベル', left: 'マイルド・甘口', right: '激辛・スパイシー', val: calcAvg('score_spiciness') },
+              ].map((item, idx) => (
                 <div key={idx} className="space-y-1">
                   <div className="flex justify-between text-[11px] text-slate-600 font-medium">
                     <span>{item.left}</span>
@@ -399,62 +391,6 @@ export default function RecipeDetailPage({
                 </div>
               ))}
             </div>
-
-            {/* アンケート回答フォーム */}
-            {currentUser ? (
-              isMyRecipe ? (
-                <div className="pt-4 border-t border-amber-200 text-center text-xs text-slate-500 py-3">
-                  ご自身の投稿レシピには感想を送ることができません 👳‍♂️
-                </div>
-              ) : (
-                <div className="pt-4 border-t border-amber-200 space-y-4">
-                  <h4 className="text-xs font-bold text-amber-900">
-                    {hasEvaluated ? '✏️ あなたの届けた感想' : '✏️ このレシピの感想を届けてください'}
-                  </h4>
-
-                  <div className="space-y-3 bg-white p-4 rounded-xl border border-amber-100 text-xs overflow-x-auto whitespace-nowrap scrollbar-hide">
-                    {evalCategories.map((row, idx) => (
-                      <div key={idx} className="flex items-center justify-between gap-2">
-                        <span className="w-28 text-right font-medium text-slate-600 text-[11px] shrink-0">{row.left}</span>
-                        <div className="flex gap-2 flex-1 justify-center">
-                          {[1, 2, 3, 4, 5].map((num) => (
-                            <button
-                              key={num}
-                              type="button"
-                              onClick={() => setUserEval({ ...userEval, [row.key]: num })}
-                              className={`w-7 h-7 rounded-full font-bold text-xs transition-all ${
-                                (userEval as any)[row.key] === num
-                                  ? 'bg-amber-600 text-white shadow-sm scale-110'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-amber-100'
-                              }`}
-                            >
-                              {num}
-                            </button>
-                          ))}
-                        </div>
-                        <span className="w-28 text-left font-medium text-slate-600 text-[11px] shrink-0">{row.right}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveEvaluation}
-                    disabled={isSubmittingEval}
-                    className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all disabled:opacity-50"
-                  >
-                    {isSubmittingEval ? '送信中...' : hasEvaluated ? '感想を修正する 👳‍♂️' : '感想を届ける 👳‍♂️'}
-                  </button>
-                </div>
-              )
-            ) : (
-              <div className="pt-4 border-t border-amber-200 text-center text-xs text-slate-500 py-3">
-                <p>感想を届けるにはログインが必要です。</p>
-                <Link href="/login" className="text-amber-700 font-bold hover:underline mt-2 inline-block">
-                  🔑 ログイン画面へ
-                </Link>
-              </div>
-            )}
           </div>
         </div>
       </div>
