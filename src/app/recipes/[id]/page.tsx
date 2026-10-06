@@ -24,7 +24,7 @@ export default function RecipeDetailPage({
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
 
-  // 感想・評価機能
+  // 感想機能
   const [evaluations, setEvaluations] = useState<any[]>([])
   const [userEval, setUserEval] = useState({
     score_taste: 3,
@@ -33,6 +33,7 @@ export default function RecipeDetailPage({
   })
   const [hasEvaluated, setHasEvaluated] = useState(false)
   const [isSubmittingEval, setIsSubmittingEval] = useState(false)
+  const [showThankYouAnimation, setShowThankYouAnimation] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('namaste_user')
@@ -149,12 +150,12 @@ export default function RecipeDetailPage({
     }
   }
 
-  // 感想・評価投稿
+  // 感想届ける投稿
   const handleSubmitEvaluation = async () => {
     if (!currentUser) return requireLoginAction()
 
     if (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username) {
-      alert('ご自身の投稿レシピには評価・感想を投稿できません 👳‍♂️')
+      alert('ご自身の投稿レシピには感想を届けられません 👳‍♂️')
       return
     }
 
@@ -174,8 +175,11 @@ export default function RecipeDetailPage({
 
       if (error) throw error
 
-      alert('評価・感想を送信しました！👳‍♂️')
       setHasEvaluated(true)
+      setShowThankYouAnimation(true)
+      setTimeout(() => {
+        setShowThankYouAnimation(false)
+      }, 3500)
 
       const { data: updatedEvals } = await supabase
         .from('recipe_evaluations')
@@ -216,8 +220,19 @@ export default function RecipeDetailPage({
   const spicinessAvg = calcAvg('score_spiciness')
 
   return (
-    <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10 relative">
+    <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10 relative overflow-hidden">
       <GuestPromotionModal />
+
+      {/* 感謝のアニメーションオーバーレイ */}
+      {showThankYouAnimation && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/40 backdrop-blur-xs animate-fade-in pointer-events-none p-4">
+          <div className="bg-white rounded-3xl p-8 border-4 border-amber-400 shadow-2xl text-center space-y-3 transform animate-bounce">
+            <div className="text-5xl">🎉 🍛 ✨</div>
+            <h3 className="text-xl font-black text-amber-900">感想を届けました！</h3>
+            <p className="text-xs font-bold text-slate-600">素敵な感想をありがとうございます 👳‍♂️</p>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex justify-between items-center">
@@ -401,14 +416,14 @@ export default function RecipeDetailPage({
             )}
           </div>
 
-          {/* 📊 レシピ評価 & 感想投稿エリア */}
+          {/* 📊 みんなのレシピ感想エリア */}
           <div className="bg-amber-50/80 rounded-2xl p-5 border border-amber-200 space-y-5">
             <div className="border-b border-amber-200 pb-2 flex justify-between items-center">
               <div>
                 <h3 className="text-sm font-black text-amber-950 flex items-center gap-1.5">
-                  <span>📊</span> みんなのレシピ評価・感想
+                  <span>📊</span> みんなのレシピ感想
                 </h3>
-                <p className="text-[11px] text-slate-500">（全 {evaluations.length} 件の評価）</p>
+                <p className="text-[11px] text-slate-500">（全 {evaluations.length} 件の感想）</p>
               </div>
             </div>
 
@@ -466,17 +481,17 @@ export default function RecipeDetailPage({
               </div>
             </div>
 
-            {/* 感想・評価投稿フォーム（自分のレシピの場合は制御） */}
+            {/* 感想お届けフォーム */}
             {isOwner ? (
               <div className="bg-amber-100/60 p-4 rounded-xl border border-amber-200 text-center">
                 <p className="text-xs font-bold text-amber-900">
-                  👳‍♂️ ご自身の投稿レシピには評価・感想を投稿できません。
+                  👳‍♂️ ご自身の投稿レシピには感想を届けられません。
                 </p>
               </div>
             ) : (
               <div className="bg-white p-4 rounded-xl border border-amber-200 space-y-4">
                 <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                  ✍️ あなたの評価・感想を投稿する
+                  ✍️ あなたの感想を届けてください
                 </h4>
 
                 <div className="space-y-3 text-xs">
@@ -547,7 +562,7 @@ export default function RecipeDetailPage({
                   disabled={isSubmittingEval}
                   className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  {isSubmittingEval ? '送信中...' : hasEvaluated ? '評価・感想を更新する 👳‍♂️' : '評価・感想を投稿する 👳‍♂️️'}
+                  {isSubmittingEval ? '送信中...' : hasEvaluated ? '感想を再更新して届ける 👳‍♂️' : '感想を届ける 👳‍♂️'}
                 </button>
               </div>
             )}
