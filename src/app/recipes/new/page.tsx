@@ -25,19 +25,17 @@ export default function NewRecipePage() {
   const [selectedFeatureTypes, setSelectedFeatureTypes] = useState<string[]>([])
 
   const [ingredients, setIngredients] = useState([
-    { name: '', amount: '', amazon_url: '', rakuten_url: '', is_featured: false }
+    { id: 'ing-1', name: '', amount: '', amazon_url: '', rakuten_url: '', is_featured: false },
+    { id: 'ing-2', name: '', amount: '', amazon_url: '', rakuten_url: '', is_featured: false }
   ])
 
   const [steps, setSteps] = useState([
-    { instruction: '', is_featured: true, imageFile: null as File | null, imagePreview: '' },
-    { instruction: '', is_featured: false, imageFile: null as File | null, imagePreview: '' }
+    { id: 'step-1', instruction: '', is_featured: true, imageFile: null as File | null, imagePreview: '' },
+    { id: 'step-2', instruction: '', is_featured: false, imageFile: null as File | null, imagePreview: '' }
   ])
 
   const [mainImageFile, setMainImageFile] = useState<File | null>(null)
   const [mainImagePreview, setMainImagePreview] = useState<string>('')
-
-  const [draggedIngIdx, setDraggedIngIdx] = useState<number | null>(null)
-  const [draggedStepIdx, setDraggedStepIdx] = useState<number | null>(null)
 
   useEffect(() => {
     const stored = localStorage.getItem('namaste_user')
@@ -48,6 +46,13 @@ export default function NewRecipePage() {
       router.push('/login')
     }
   }, [router])
+
+  // Enterキー誤投稿防止
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+      e.preventDefault()
+    }
+  }
 
   const handleToggleFeature = (id: string) => {
     if (selectedFeatureTypes.includes(id)) {
@@ -61,53 +66,41 @@ export default function NewRecipePage() {
 
       if (id === '市販のルー派' || id === '決め手は隠し味') {
         setIngredients(prev => [
-          { name: id === '市販のルー派' ? '市販カレールー (黄金配合)' : '決め手の隠し味', amount: '', amazon_url: '', rakuten_url: '', is_featured: true },
+          { id: `ing-${Date.now()}`, name: id === '市販のルー派' ? '市販カレールー (黄金配合)' : '決め手の隠し味', amount: '', amazon_url: '', rakuten_url: '', is_featured: true },
           ...prev
         ])
       }
     }
   }
 
-  const validateUrl = (url: string, domain: 'amazon' | 'rakuten') => {
-    if (!url.trim()) return true
-    try {
-      const parsed = new URL(url)
-      if (domain === 'amazon' && (parsed.hostname.includes('amazon.co.jp') || parsed.hostname.includes('amazon.com') || parsed.hostname.includes('amzn.to'))) return true
-      if (domain === 'rakuten' && (parsed.hostname.includes('rakuten.co.jp') || parsed.hostname.includes('rakuten.com') || parsed.hostname.includes('a.r10.to'))) return true
-    } catch {
-      return false
-    }
-    return false
-  }
-
-  const handleIngDragStart = (index: number) => setDraggedIngIdx(index)
-  const handleIngDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    if (draggedIngIdx === null || draggedIngIdx === index) return
+  // 材料順序入れ替え
+  const moveIngredient = (index: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? index - 1 : index + 1
+    if (targetIdx < 0 || targetIdx >= ingredients.length) return
     const newArr = [...ingredients]
-    const item = newArr.splice(draggedIngIdx, 1)[0]
-    newArr.splice(index, 0, item)
-    setDraggedIngIdx(index)
+    const temp = newArr[index]
+    newArr[index] = newArr[targetIdx]
+    newArr[targetIdx] = temp
     setIngredients(newArr)
   }
 
-  const handleStepDragStart = (index: number) => setDraggedStepIdx(index)
-  const handleStepDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    if (draggedStepIdx === null || draggedStepIdx === index) return
+  // 手順順序入れ替え
+  const moveStep = (index: number, direction: 'up' | 'down') => {
+    const targetIdx = direction === 'up' ? index - 1 : index + 1
+    if (targetIdx < 0 || targetIdx >= steps.length) return
     const newArr = [...steps]
-    const item = newArr.splice(draggedStepIdx, 1)[0]
-    newArr.splice(index, 0, item)
-    setDraggedStepIdx(index)
+    const temp = newArr[index]
+    newArr[index] = newArr[targetIdx]
+    newArr[targetIdx] = temp
     setSteps(newArr)
   }
 
   const handleAddIngredient = (isFeatured = false) => {
-    setIngredients([...ingredients, { name: '', amount: '', amazon_url: '', rakuten_url: '', is_featured: isFeatured }])
+    setIngredients([...ingredients, { id: `ing-${Date.now()}`, name: '', amount: '', amazon_url: '', rakuten_url: '', is_featured: isFeatured }])
   }
 
   const handleAddStep = (isFeatured = false) => {
-    setSteps([...steps, { instruction: '', is_featured: isFeatured, imageFile: null, imagePreview: '' }])
+    setSteps([...steps, { id: `step-${Date.now()}`, instruction: '', is_featured: isFeatured, imageFile: null, imagePreview: '' }])
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -115,21 +108,9 @@ export default function NewRecipePage() {
     if (!title.trim()) return alert('タイトルを入力してください。')
     if (!currentUser) return
 
-    for (const ing of ingredients) {
-      if (ing.amazon_url && !validateUrl(ing.amazon_url, 'amazon')) {
-        alert(`「${ing.name || '材料'}」のAmazon URLが不正です。`)
-        return
-      }
-      if (ing.rakuten_url && !validateUrl(ing.rakuten_url, 'rakuten')) {
-        alert(`「${ing.name || '材料'}」の楽天 URLが不正です。`)
-        return
-      }
-    }
-
     setLoading(true)
 
     try {
-      // 1. メイン画像のアップロード
       let mainImageUrl = ''
       if (mainImageFile) {
         const fileExt = mainImageFile.name.split('.').pop()
@@ -143,14 +124,11 @@ export default function NewRecipePage() {
         if (!uploadError) {
           const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
           mainImageUrl = data.publicUrl
-        } else {
-          console.error('メイン画像アップロード失敗:', uploadError)
         }
       }
 
       const combinedFeatureType = selectedFeatureTypes.join(',')
 
-      // 2. レシピ本体の作成
       const { data: recipeData, error: recipeError } = await supabase
         .from('recipes')
         .insert([{
@@ -169,7 +147,7 @@ export default function NewRecipePage() {
       if (recipeError) throw recipeError
       const recipeId = recipeData.id
 
-      // 3. 材料保存
+      // 材料保存
       const validIngredients = ingredients.filter(i => i.name.trim())
       if (validIngredients.length > 0) {
         const ingPayload = validIngredients.map(i => ({
@@ -187,7 +165,7 @@ export default function NewRecipePage() {
         await supabase.from('recipe_ingredients').insert(ingPayload)
       }
 
-      // 4. 手順および手順画像の保存
+      // 手順保存
       const validSteps = steps.filter(s => s.instruction.trim() || s.imageFile)
       for (let idx = 0; idx < validSteps.length; idx++) {
         const st = validSteps[idx]
@@ -205,8 +183,6 @@ export default function NewRecipePage() {
           if (!stepImgErr) {
             const { data } = supabase.storage.from('recipe-images').getPublicUrl(filePath)
             stepImageUrl = data.publicUrl
-          } else {
-            console.error(`手順${idx + 1}の画像アップロード失敗:`, stepImgErr)
           }
         }
 
@@ -222,7 +198,7 @@ export default function NewRecipePage() {
         await supabase.from('recipe_steps').insert([stepPayload])
       }
 
-      alert('カレーレシピを投稿しました！👳‍♂️')
+      alert('カレーレシピを投稿しました！👳‍♂️️')
       router.push(`/recipes/${recipeId}`)
     } catch (err: any) {
       alert('投稿エラー: ' + err.message)
@@ -238,7 +214,11 @@ export default function NewRecipePage() {
           ← トップへ戻る
         </Link>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-amber-200 space-y-6">
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={handleKeyDown}
+          className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-amber-200 space-y-6"
+        >
           <h1 className="text-xl font-black text-slate-800 flex items-center gap-2 border-b border-amber-100 pb-4">
             <span>🍛</span> カレーレシピを投稿する
           </h1>
@@ -321,7 +301,6 @@ export default function NewRecipePage() {
             />
           </div>
 
-          {/* 完成写真選択＆プレビュー */}
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1">完成写真</label>
             <input
@@ -337,7 +316,7 @@ export default function NewRecipePage() {
               className="text-xs text-slate-500"
             />
             {mainImagePreview && (
-              <div className="mt-3 relative w-full h-52 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200 group">
+              <div className="mt-3 relative w-full h-52 rounded-2xl overflow-hidden bg-slate-100 border border-amber-200">
                 <img src={mainImagePreview} alt="完成写真プレビュー" className="w-full h-full object-cover" />
                 <button
                   type="button"
@@ -353,11 +332,11 @@ export default function NewRecipePage() {
             )}
           </div>
 
-          {/* 材料 */}
+          {/* 🛒 材料 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
-                🛒 材料 <span className="text-[10px] text-slate-400 font-normal">（⠿ をドラッグして順序入れ替え）</span>
+                🛒 材料 <span className="text-[10px] text-slate-400 font-normal">（▲▼で順番スライド変更）</span>
               </label>
               <button
                 type="button"
@@ -371,18 +350,35 @@ export default function NewRecipePage() {
             <div className="space-y-2.5">
               {ingredients.map((ing, idx) => (
                 <div
-                  key={idx}
-                  draggable
-                  onDragStart={() => handleIngDragStart(idx)}
-                  onDragOver={e => handleIngDragOver(e, idx)}
-                  className={`p-3 rounded-2xl border transition space-y-2 cursor-move ${
+                  key={ing.id}
+                  className={`p-3 rounded-2xl border transition-all duration-300 ease-in-out transform space-y-2 ${
                     ing.is_featured
                       ? 'bg-amber-100/90 border-amber-400 shadow-xs'
                       : 'bg-slate-50/70 border-slate-200'
                   }`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400 font-bold select-none cursor-grab">⠿</span>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => moveIngredient(idx, 'up')}
+                        disabled={idx === 0}
+                        className="w-6 h-6 flex items-center justify-center bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black text-xs rounded-md disabled:opacity-20 transition shadow-xs cursor-pointer"
+                        title="上へ移動"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveIngredient(idx, 'down')}
+                        disabled={idx === ingredients.length - 1}
+                        className="w-6 h-6 flex items-center justify-center bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black text-xs rounded-md disabled:opacity-20 transition shadow-xs cursor-pointer"
+                        title="下へ移動"
+                      >
+                        ▼
+                      </button>
+                    </div>
+
                     {ing.is_featured && (
                       <span className="bg-amber-600 text-white font-black text-[9px] px-2 py-0.5 rounded-full shrink-0">
                         🔥 強調
@@ -390,25 +386,25 @@ export default function NewRecipePage() {
                     )}
                     <input
                       type="text"
-                      placeholder="材料名 (例: カレールー、隠し味チョコ)"
+                      placeholder="材料名 (例: カレールー)"
                       value={ing.name}
                       onChange={e => {
                         const newArr = [...ingredients]
                         newArr[idx].name = e.target.value
                         setIngredients(newArr)
                       }}
-                      className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 outline-none"
+                      className="flex-1 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
                     />
                     <input
                       type="text"
-                      placeholder="分量 (例: 1/2箱)"
+                      placeholder="分量"
                       value={ing.amount}
                       onChange={e => {
                         const newArr = [...ingredients]
                         newArr[idx].amount = e.target.value
                         setIngredients(newArr)
                       }}
-                      className="w-24 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 outline-none"
+                      className="w-20 bg-white border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
                     />
                     {ingredients.length > 1 && (
                       <button
@@ -421,9 +417,9 @@ export default function NewRecipePage() {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6 pt-1 border-t border-slate-200/60">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-8 pt-1 border-t border-slate-200/60">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-black text-amber-900 shrink-0">🛒 Amazon:</span>
+                      <span className="text-[10px] font-black text-amber-950 shrink-0">🛒 Amazon:</span>
                       <input
                         type="url"
                         placeholder="https://www.amazon.co.jp/..."
@@ -464,11 +460,11 @@ export default function NewRecipePage() {
             </button>
           </div>
 
-          {/* 手順 */}
+          {/* 👨‍🍳 手順 */}
           <div className="space-y-3 border-t border-amber-100 pt-4">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-bold text-slate-800">
-                👨‍🍳 作り方手順 <span className="text-[10px] text-slate-400 font-normal">（⠿ をドラッグして順序入れ替え）</span>
+                👨‍🍳 作り方手順 <span className="text-[10px] text-slate-400 font-normal">（▲▼で順番スライド変更）</span>
               </label>
               <button
                 type="button"
@@ -482,11 +478,8 @@ export default function NewRecipePage() {
             <div className="space-y-3">
               {steps.map((st, idx) => (
                 <div
-                  key={idx}
-                  draggable
-                  onDragStart={() => handleStepDragStart(idx)}
-                  onDragOver={e => handleStepDragOver(e, idx)}
-                  className={`p-3.5 rounded-2xl border space-y-2 cursor-move ${
+                  key={st.id}
+                  className={`p-3.5 rounded-2xl border transition-all duration-300 ease-in-out transform space-y-2 ${
                     st.is_featured
                       ? 'bg-gradient-to-r from-amber-500/10 to-orange-500/10 border-amber-400 shadow-sm'
                       : 'bg-amber-50/50 border-amber-200'
@@ -494,8 +487,27 @@ export default function NewRecipePage() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-slate-400 font-bold select-none cursor-grab">⠿</span>
-                      <span className="font-bold text-amber-900 text-xs">手順 {idx + 1}</span>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveStep(idx, 'up')}
+                          disabled={idx === 0}
+                          className="w-6 h-6 flex items-center justify-center bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black text-xs rounded-md disabled:opacity-20 transition shadow-xs cursor-pointer"
+                          title="上へ移動"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveStep(idx, 'down')}
+                          disabled={idx === steps.length - 1}
+                          className="w-6 h-6 flex items-center justify-center bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-black text-xs rounded-md disabled:opacity-20 transition shadow-xs cursor-pointer"
+                          title="下へ移動"
+                        >
+                          ▼
+                        </button>
+                      </div>
+                      <span className="font-bold text-amber-900 text-xs ml-1">手順 {idx + 1}</span>
                       {st.is_featured && (
                         <span className="bg-gradient-to-r from-amber-500 to-orange-500 text-white font-black text-[9px] px-2 py-0.5 rounded-md shadow-xs">
                           🔥 秘伝強調手順
@@ -553,7 +565,7 @@ export default function NewRecipePage() {
                             newArr[idx].imagePreview = ''
                             setSteps(newArr)
                           }}
-                          className="absolute top-0.5 right-0.5 bg-black/70 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center"
+                          className="absolute top-0.5 right-0.5 bg-black/70 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center cursor-pointer"
                         >
                           ✕
                         </button>
@@ -576,7 +588,7 @@ export default function NewRecipePage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition disabled:opacity-50 cursor-pointer"
+            className="w-full py-3.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer disabled:opacity-50"
           >
             {loading ? '送信中...' : 'カレーレシピを投稿する 👳‍♂️'}
           </button>
