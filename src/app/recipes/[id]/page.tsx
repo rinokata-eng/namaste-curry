@@ -153,6 +153,11 @@ export default function RecipeDetailPage({
   const handleSubmitEvaluation = async () => {
     if (!currentUser) return requireLoginAction()
 
+    if (recipe.profile_id === currentUser.id || recipe.author_name === currentUser.username) {
+      alert('ご自身の投稿レシピには評価・感想を投稿できません 👳‍♂️')
+      return
+    }
+
     setIsSubmittingEval(true)
     try {
       const evalPayload = {
@@ -461,83 +466,91 @@ export default function RecipeDetailPage({
               </div>
             </div>
 
-            {/* 感想・評価投稿フォーム */}
-            <div className="bg-white p-4 rounded-xl border border-amber-200 space-y-4">
-              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                ✍️ あなたの評価・感想を投稿する
-              </h4>
-
-              <div className="space-y-3 text-xs">
-                {/* 味 */}
-                <div>
-                  <div className="flex justify-between font-bold text-slate-700 mb-1">
-                    <span className="flex items-center gap-1">🍛 味のテイスト:</span>
-                    <span className="text-amber-700">{userEval.score_taste} / 5</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs shrink-0">🏠</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={userEval.score_taste}
-                      onChange={e => setUserEval({ ...userEval, score_taste: Number(e.target.value) })}
-                      className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
-                    />
-                    <span className="text-xs shrink-0">🌿</span>
-                  </div>
-                </div>
-
-                {/* 手間 */}
-                <div>
-                  <div className="flex justify-between font-bold text-slate-700 mb-1">
-                    <span className="flex items-center gap-1">⏱️ 調理の手間:</span>
-                    <span className="text-amber-700">{userEval.score_effort} / 5</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs shrink-0">⚡</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={userEval.score_effort}
-                      onChange={e => setUserEval({ ...userEval, score_effort: Number(e.target.value) })}
-                      className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
-                    />
-                    <span className="text-xs shrink-0">🍳</span>
-                  </div>
-                </div>
-
-                {/* 辛さ */}
-                <div>
-                  <div className="flex justify-between font-bold text-slate-700 mb-1">
-                    <span className="flex items-center gap-1">🌶️ 辛さレベル:</span>
-                    <span className="text-amber-700">{userEval.score_spiciness} / 5</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs shrink-0">🍯</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={userEval.score_spiciness}
-                      onChange={e => setUserEval({ ...userEval, score_spiciness: Number(e.target.value) })}
-                      className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
-                    />
-                    <span className="text-xs shrink-0">🔥</span>
-                  </div>
-                </div>
+            {/* 感想・評価投稿フォーム（自分のレシピの場合は制御） */}
+            {isOwner ? (
+              <div className="bg-amber-100/60 p-4 rounded-xl border border-amber-200 text-center">
+                <p className="text-xs font-bold text-amber-900">
+                  👳‍♂️ ご自身の投稿レシピには評価・感想を投稿できません。
+                </p>
               </div>
+            ) : (
+              <div className="bg-white p-4 rounded-xl border border-amber-200 space-y-4">
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  ✍️ あなたの評価・感想を投稿する
+                </h4>
 
-              <button
-                type="button"
-                onClick={handleSubmitEvaluation}
-                disabled={isSubmittingEval}
-                className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
-              >
-                {isSubmittingEval ? '送信中...' : hasEvaluated ? '評価・感想を更新する 👳‍♂️' : '評価・感想を投稿する 👳‍♂️'}
-              </button>
-            </div>
+                <div className="space-y-3 text-xs">
+                  {/* 味 */}
+                  <div>
+                    <div className="flex justify-between font-bold text-slate-700 mb-1">
+                      <span className="flex items-center gap-1">🍛 味のテイスト:</span>
+                      <span className="text-amber-700">{userEval.score_taste} / 5</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs shrink-0">🏠</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={userEval.score_taste}
+                        onChange={e => setUserEval({ ...userEval, score_taste: Number(e.target.value) })}
+                        className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                      />
+                      <span className="text-xs shrink-0">🌿</span>
+                    </div>
+                  </div>
+
+                  {/* 手間 */}
+                  <div>
+                    <div className="flex justify-between font-bold text-slate-700 mb-1">
+                      <span className="flex items-center gap-1">⏱️ 調理の手間:</span>
+                      <span className="text-amber-700">{userEval.score_effort} / 5</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs shrink-0">⚡</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={userEval.score_effort}
+                        onChange={e => setUserEval({ ...userEval, score_effort: Number(e.target.value) })}
+                        className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                      />
+                      <span className="text-xs shrink-0">🍳</span>
+                    </div>
+                  </div>
+
+                  {/* 辛さ */}
+                  <div>
+                    <div className="flex justify-between font-bold text-slate-700 mb-1">
+                      <span className="flex items-center gap-1">🌶️ 辛さレベル:</span>
+                      <span className="text-amber-700">{userEval.score_spiciness} / 5</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs shrink-0">🍯</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={userEval.score_spiciness}
+                        onChange={e => setUserEval({ ...userEval, score_spiciness: Number(e.target.value) })}
+                        className="w-full accent-amber-600 cursor-pointer h-1.5 bg-slate-200 rounded-lg"
+                      />
+                      <span className="text-xs shrink-0">🔥</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSubmitEvaluation}
+                  disabled={isSubmittingEval}
+                  className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {isSubmittingEval ? '送信中...' : hasEvaluated ? '評価・感想を更新する 👳‍♂️' : '評価・感想を投稿する 👳‍♂️️'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
