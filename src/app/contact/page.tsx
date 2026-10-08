@@ -1,139 +1,172 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function ContactPage() {
-  const router = useRouter()
-  const [currentUser, setCurrentUser] = useState<any>(null)
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [category, setCategory] = useState('サービスに関するお問い合わせ')
-  const [message, setMessage] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [category, setCategory] = useState('サービスについて');
+  const [message, setMessage] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
-    const stored = localStorage.getItem('namaste_user')
-    if (!stored) {
-      alert('お問い合わせを送信するにはバルマ（会員）登録またはログインが必要です。')
-      router.push('/login')
-      return
-    }
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        if (user.email) setEmail(user.email);
 
-    const user = JSON.parse(stored)
-    setCurrentUser(user)
-    setUsername(user.username || '')
-    setEmail(user.email || '')
-  }, [router])
+        const metaName =
+          user.user_metadata?.baruma_name ||
+          user.user_metadata?.username ||
+          user.user_metadata?.display_name ||
+          user.user_metadata?.full_name ||
+          user.user_metadata?.name;
+
+        if (metaName) {
+          setName(metaName);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          const profileName =
+            profile.baruma_name ||
+            profile.username ||
+            profile.display_name ||
+            profile.name;
+          if (profileName) {
+            setName(profileName);
+          }
+        }
+      }
+    };
+    fetchUser();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSubmitting(true)
+    e.preventDefault();
+    setStatus('loading');
+    setErrorMessage('');
 
-    // 送信シミュレーション
-    setTimeout(() => {
-      setSubmitting(false)
-      setSubmitted(true)
-    }, 800)
-  }
+    try {
+      // 1. Supabaseのcontact_inquiriesテーブルへ保存（管理画面閲覧用）
+      const { error: dbError } = await supabase
+        .from('contact_inquiries')
+        .insert([{ name, email, category, message }]);
 
-  if (!currentUser) {
-    return (
-      <main className="min-h-screen bg-amber-50 p-10 flex justify-center items-center text-slate-500 text-xs">
-        ログイン情報を確認中...
-      </main>
-    )
-  }
+      if (dbError) throw dbError;
+
+      // 2. SendGrid通知用APIの呼び出し（メール通知用）
+      const fullMessage = `【種別】${category}\n\n${message}`;
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, message: fullMessage }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'メール送信に失敗しました');
+      }
+
+      setStatus('success');
+      setMessage('');
+    } catch (err: any) {
+      console.error(err);
+      setStatus('error');
+      setErrorMessage(err.message || '送信中にエラーが発生しました。');
+    }
+  };
 
   return (
-    <main className="min-h-screen bg-amber-50 text-slate-800 p-4 md:p-10">
-      <div className="max-w-xl mx-auto space-y-6">
-        <Link href="/" className="text-sm font-bold text-amber-700 hover:text-amber-800">
-          ← トップへ戻る
+    <main className="max-w-2xl mx-auto p-6">
+      <div className="mb-6">
+        <Link href="/" className="text-sm text-blue-500 hover:underline">
+          ← トップに戻る
         </Link>
-
-        <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-amber-200 space-y-6">
-          <div className="border-b border-amber-200 pb-4 text-center sm:text-left">
-            <h1 className="text-2xl font-black text-amber-900">📩 お問い合わせ</h1>
-            <p className="text-xs text-amber-700 mt-1">
-              NAMASTE事務局へのお問い合わせ・不具合報告はこちらからお送りください。
-            </p>
-          </div>
-
-          {submitted ? (
-            <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl text-center space-y-3">
-              <div className="text-4xl">👳‍♂️✨</div>
-              <h3 className="font-bold text-sm text-emerald-900">お問い合わせを受け付けました！</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                メッセージをお送りいただきありがとうございます。<br />内容を確認のうえ、ご登録メールアドレス宛にご連絡いたします。
-              </p>
-              <div className="pt-2">
-                <Link href="/" className="inline-block bg-amber-600 text-white font-bold text-xs px-4 py-2 rounded-xl">
-                  トップページへ戻る
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">バルマ名 (ユーザー名)</label>
-                <input
-                  type="text"
-                  disabled
-                  value={username}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-sm bg-slate-100 text-slate-600 font-bold cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">メールアドレス</label>
-                <input
-                  type="email"
-                  disabled
-                  value={email}
-                  className="w-full border border-slate-200 rounded-xl p-2.5 text-sm bg-slate-100 text-slate-600 font-bold cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">お問い合わせ種別</label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                >
-                  <option value="サービスに関するお問い合わせ">サービスに関するお問い合わせ</option>
-                  <option value="不適切な投稿・権利侵害の通報">不適切な投稿・権利侵害の通報</option>
-                  <option value="不具合・バグの報告">不具合・バグの報告</option>
-                  <option value="その他">その他</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">お問い合わせ内容</label>
-                <textarea
-                  required
-                  rows={5}
-                  placeholder="詳細な内容をご記入ください"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  className="w-full border border-slate-300 rounded-xl p-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={submitting}
-                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black py-3 rounded-2xl shadow-md transition text-sm disabled:opacity-50 active:scale-95"
-              >
-                {submitting ? '送信中...' : '送信する 🚀'}
-              </button>
-            </form>
-          )}
-        </div>
       </div>
+
+      <h1 className="text-2xl font-bold mb-6 text-white">お問い合わせ</h1>
+
+      {status === 'success' && (
+        <div className="p-4 mb-6 text-green-300 bg-green-900/50 border border-green-500 rounded-lg">
+          お問い合わせを受け付けました。メッセージありがとうございました！
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="p-4 mb-6 text-red-300 bg-red-900/50 border border-red-500 rounded-lg">
+          {errorMessage}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-200">バルマ名</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full p-2 border border-gray-700 rounded-md bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="バルマ名"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-200">メールアドレス</label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full p-2 border border-gray-700 rounded-md bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="example@example.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-200">お問い合わせ種別</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full p-2 border border-gray-700 rounded-md bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="サービスについて" className="bg-gray-900 text-white">サービスについて</option>
+            <option value="バグ・不具合のご報告" className="bg-gray-900 text-white">バグ・不具合のご報告</option>
+            <option value="ご意見・ご要望" className="bg-gray-900 text-white">ご意見・ご要望</option>
+            <option value="その他" className="bg-gray-900 text-white">その他</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1 text-gray-200">お問い合わせ内容</label>
+          <textarea
+            required
+            rows={5}
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className="w-full p-2 border border-gray-700 rounded-md bg-gray-900 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="お問い合わせ内容をご記入ください"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={status === 'loading'}
+          className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+        >
+          {status === 'loading' ? '送信中...' : '送信する'}
+        </button>
+      </form>
     </main>
-  )
+  );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import confetti from 'canvas-confetti'
 
 const FEATURE_TYPES = [
   { id: '時短レシピ', label: '⏱ 時短レシピ' },
@@ -16,6 +17,8 @@ export default function NewRecipePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [createdRecipeId, setCreatedRecipeId] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [genre, setGenre] = useState('スパイスカレー')
@@ -47,7 +50,6 @@ export default function NewRecipePage() {
     }
   }, [router])
 
-  // Enterキー誤投稿防止
   const handleKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
       e.preventDefault()
@@ -73,7 +75,6 @@ export default function NewRecipePage() {
     }
   }
 
-  // 材料順序入れ替え
   const moveIngredient = (index: number, direction: 'up' | 'down') => {
     const targetIdx = direction === 'up' ? index - 1 : index + 1
     if (targetIdx < 0 || targetIdx >= ingredients.length) return
@@ -84,7 +85,6 @@ export default function NewRecipePage() {
     setIngredients(newArr)
   }
 
-  // 手順順序入れ替え
   const moveStep = (index: number, direction: 'up' | 'down') => {
     const targetIdx = direction === 'up' ? index - 1 : index + 1
     if (targetIdx < 0 || targetIdx >= steps.length) return
@@ -198,8 +198,15 @@ export default function NewRecipePage() {
         await supabase.from('recipe_steps').insert([stepPayload])
       }
 
-      alert('カレーレシピを投稿しました！👳‍♂️️')
-      router.push(`/recipes/${recipeId}`)
+      // 紙吹雪アニメーション発生
+      confetti({
+        particleCount: 120,
+        spread: 80,
+        origin: { y: 0.6 }
+      })
+
+      setCreatedRecipeId(recipeId)
+      setShowSuccessModal(true)
     } catch (err: any) {
       alert('投稿エラー: ' + err.message)
     } finally {
@@ -594,6 +601,26 @@ export default function NewRecipePage() {
           </button>
         </form>
       </div>
+
+      {/* 🎉 レシピ投稿完了 感謝ポップアップモーダル */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full text-center space-y-4 shadow-2xl border-2 border-amber-400 animate-in fade-in zoom-in duration-200">
+            <div className="text-5xl animate-bounce">👳‍♂️✨</div>
+            <h2 className="text-xl font-black text-amber-950">素晴らしいカレーレシピを<br />ありがとうございます！</h2>
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              あなたの秘伝レシピがNAMASTEコミュニティをさらに豊かにしました！🍛<br />
+              たくさんのバルマたちからの『いいね』を楽しみに待っていましょう！
+            </p>
+            <button
+              onClick={() => router.push(`/recipes/${createdRecipeId}`)}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-black text-sm py-3 rounded-2xl shadow-lg transition cursor-pointer"
+            >
+              作成したレシピを見る ↗
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

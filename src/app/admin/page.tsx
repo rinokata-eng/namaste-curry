@@ -2,21 +2,30 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabaseClient'
 
-// 確実に画面前面（下側）へ表示される視認性の高いカスタムツールチップ
 function Tooltip({ label, info }: { label: string; info: string }) {
   return (
     <span className="relative group inline-flex items-center gap-1 cursor-help py-1">
       <span className="font-bold">{label}</span>
       <span className="text-[10px] text-amber-400 bg-amber-500/20 border border-amber-500/40 w-4 h-4 rounded-full flex items-center justify-center font-bold">?</span>
       
-      {/* ホバー時に下側に表示されるくっきりとした吹き出し */}
       <span className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 hidden group-hover:block w-52 p-2.5 bg-slate-900 text-amber-200 text-[11px] rounded-xl border border-amber-500/50 shadow-2xl z-[9999] pointer-events-none font-normal leading-relaxed text-left whitespace-normal">
         {info}
       </span>
     </span>
   )
+}
+
+function getBalmaRank(postCount: number, totalLikes: number, manualRank?: string): string {
+  if (manualRank && ['見習い', '一人前', 'ベテラン', '達人', 'マハラジャ'].includes(manualRank)) {
+    return manualRank
+  }
+  if (postCount >= 10 || totalLikes >= 50) return 'マハラジャ'
+  if (postCount >= 5 || totalLikes >= 20) return '達人'
+  if (postCount >= 3 || totalLikes >= 10) return 'ベテラン'
+  if (postCount >= 1 || totalLikes >= 1) return '一人前'
+  return '見習い'
 }
 
 export default function AdminConsolePage() {
@@ -28,15 +37,12 @@ export default function AdminConsolePage() {
   const [bookmarks, setBookmarks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
-  // タブ管理
-  const [activeTab, setActiveTab] = useState<'users_manage' | 'users_analytics' | 'recipes' | 'analytics' | 'inquiries'>('users_manage')
+  const [activeTab, setActiveTab] = useState<'users_manage' | 'users_analytics' | 'recipes' | 'analytics' | 'inquiries'>('inquiries')
 
-  // レシピフィルター＆ソート
   const [recipeSortKey, setRecipeSortKey] = useState<string>('created_at')
   const [recipeGenreFilter, setRecipeGenreFilter] = useState<string>('all')
   const [recipeSearchQuery, setRecipeSearchQuery] = useState<string>('')
 
-  // バルマ分析ソート
   const [userSortKey, setUserSortKey] = useState<string>('total_likes')
 
   useEffect(() => {
@@ -45,17 +51,26 @@ export default function AdminConsolePage() {
 
   async function loadAdminData() {
     setLoading(true)
+    
+    // contact_inquiries テーブルからデータ取得
+    const { data: inqData, error: inqError } = await supabase
+      .from('contact_inquiries')
+      .select('*')
+      .order('created_at', { ascending: false })
+
+    if (inqError) {
+      console.error('Inquiries fetch error:', inqError)
+    }
+
     const [
       { data: rData },
       { data: pData },
-      { data: inqData },
       { data: eData },
       { data: fData },
       { data: bData }
     ] = await Promise.all([
       supabase.from('recipes').select('*').order('created_at', { ascending: false }),
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      supabase.from('inquiries').select('*').order('created_at', { ascending: false }),
       supabase.from('recipe_evaluations').select('*'),
       supabase.from('follows').select('*'),
       supabase.from('recipe_bookmarks').select('*')
@@ -72,7 +87,6 @@ export default function AdminConsolePage() {
     setFollows(followsList)
     setBookmarks(bookmarksList)
 
-    // レシピデータ拡張
     const processedRecipes = recipesList.map((r: any) => {
       const rEvals = evalsList.filter((e: any) => e.recipe_id === r.id)
       const bmCount = bookmarksList.filter((b: any) => b.recipe_id === r.id).length
@@ -104,7 +118,6 @@ export default function AdminConsolePage() {
 
     setRecipes(processedRecipes)
 
-    // バルマデータ拡張
     const processedUsers = profilesList.map((u: any) => {
       const userRecipes = processedRecipes.filter((r: any) => r.profile_id === u.id)
       const postCount = userRecipes.length
@@ -112,11 +125,7 @@ export default function AdminConsolePage() {
       const totalPv = userRecipes.reduce((sum: number, r: any) => sum + (r.pv_count || 0), 0)
       const followersCount = followsList.filter((f: any) => f.following_id === u.id).length
 
-      let rank = u.balma_rank || '見習い'
-      if (!u.balma_rank) {
-        if (postCount >= 10 || totalLikes >= 50) rank = 'マハラジャ'
-        else if (postCount >= 3) rank = 'シェフ'
-      }
+      const rank = getBalmaRank(postCount, totalLikes, u.balma_rank)
 
       return {
         ...u,
@@ -215,7 +224,6 @@ export default function AdminConsolePage() {
     <main className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
 
-        {/* ヘッダー */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-6">
           <div>
             <div className="flex items-center gap-2">
@@ -231,7 +239,6 @@ export default function AdminConsolePage() {
           </Link>
         </div>
 
-        {/* メインタブ切り替えボタン */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-900/80 p-1.5 rounded-2xl border border-slate-800 text-xs font-bold">
           <button
             onClick={() => setActiveTab('users_manage')}
@@ -265,7 +272,6 @@ export default function AdminConsolePage() {
           </button>
         </div>
 
-        {/* --- TAB 1: バルマ管理 --- */}
         {activeTab === 'users_manage' && (
           <div className="space-y-4">
             <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
@@ -285,7 +291,7 @@ export default function AdminConsolePage() {
                     <th className="p-3"><Tooltip label="バルマ名 / ID" info="バルマ（ユーザー）の表示名およびデータベース上の一意なID" /></th>
                     <th className="p-3"><Tooltip label="ステータス" info="アカウントの利用状態（利用中 / 停止中）" /></th>
                     <th className="p-3"><Tooltip label="管理権限" info="システム上の操作権限（一般ユーザー / 管理者）" /></th>
-                    <th className="p-3 text-center"><Tooltip label="バルマランク" info="投稿数や獲得いいね数に応じた称号（見習い / シェフ / マハラジャ）" /></th>
+                    <th className="p-3 text-center"><Tooltip label="バルマランク" info="5段階の称号（見習い / 一人前 / ベテラン / 達人 / マハラジャ）" /></th>
                     <th className="p-3 text-center"><Tooltip label="投稿 / イネ" info="投稿したレシピ件数と全レシピの獲得いいね合計" /></th>
                     <th className="p-3"><Tooltip label="最終ログイン / 登録" info="最後のログイン日時および新規登録日時" /></th>
                     <th className="p-3 text-center"><Tooltip label="操作" info="ランク変更やアカウントの削除操作" /></th>
@@ -347,7 +353,9 @@ export default function AdminConsolePage() {
                             className="bg-slate-950 text-slate-300 border border-slate-700 rounded-lg px-2 py-1 text-[11px] font-bold outline-none cursor-pointer"
                           >
                             <option value="見習い">見習い</option>
-                            <option value="シェフ">シェフ</option>
+                            <option value="一人前">一人前</option>
+                            <option value="ベテラン">ベテラン</option>
+                            <option value="達人">達人</option>
                             <option value="マハラジャ">マハラジャ</option>
                           </select>
 
@@ -367,7 +375,6 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {/* --- TAB 2: バルマ分析 --- */}
         {activeTab === 'users_analytics' && (
           <div className="space-y-4">
             <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 flex flex-wrap gap-2 items-center text-xs">
@@ -398,7 +405,7 @@ export default function AdminConsolePage() {
                 <thead className="bg-slate-950 text-slate-400 font-bold border-b border-slate-800 relative z-20">
                   <tr>
                     <th className="p-3"><Tooltip label="バルマ名 / ID" info="バルマの表示名および一意のID" /></th>
-                    <th className="p-3 text-center"><Tooltip label="バルマランク" info="実績に応じた階級称号（見習い / シェフ / マハラジャ）" /></th>
+                    <th className="p-3 text-center"><Tooltip label="バルマランク" info="5段階の称号（見習い / 一人前 / ベテラン / 達人 / マハラジャ）" /></th>
                     <th className="p-3 text-center"><Tooltip label="📝 投稿数" info="このバルマが作成・投稿したレシピの件数" /></th>
                     <th className="p-3 text-center"><Tooltip label="❤️ 獲得いいね総数" info="投稿した全レシピで獲得した『いいね』の総合計" /></th>
                     <th className="p-3 text-center"><Tooltip label="👀 投稿レシピ総PV" info="投稿した全レシピが開かれた通算アクセス回数の合計" /></th>
@@ -435,7 +442,6 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {/* --- TAB 3: レシピ管理・分析 --- */}
         {activeTab === 'recipes' && (
           <div className="space-y-4">
             <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 flex flex-wrap gap-3 items-center justify-between text-xs">
@@ -537,7 +543,6 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {/* --- TAB 4: トレンド分析 --- */}
         {activeTab === 'analytics' && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -582,9 +587,18 @@ export default function AdminConsolePage() {
           </div>
         )}
 
-        {/* --- TAB 5: お問い合わせ一覧 --- */}
         {activeTab === 'inquiries' && (
           <div className="space-y-4">
+            <div className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+              <h2 className="text-sm font-bold text-slate-200">お問い合わせ一覧</h2>
+              <button
+                onClick={loadAdminData}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                🔄 再読み込み
+              </button>
+            </div>
+
             {inquiries.length === 0 ? (
               <div className="bg-slate-900/60 p-8 rounded-2xl border border-slate-800 text-center text-slate-400 text-xs">
                 お問い合わせメッセージはありません。
@@ -599,6 +613,11 @@ export default function AdminConsolePage() {
                         {new Date(inq.created_at).toLocaleString('ja-JP')}
                       </span>
                     </div>
+                    {inq.category && (
+                      <span className="inline-block bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                        {inq.category}
+                      </span>
+                    )}
                     <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{inq.message}</p>
                   </div>
                 ))}
