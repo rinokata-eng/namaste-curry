@@ -29,17 +29,7 @@ export async function GET(request: Request) {
       .select('*', { count: 'exact', head: true })
       .gte('created_at', sevenDaysAgo);
 
-    // 2. レシピ＆エンゲージメント集計
-    const { count: todayPV } = await supabase
-      .from('recipe_views')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', startOfToday);
-
-    const { count: weeklyPV } = await supabase
-      .from('recipe_views')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', sevenDaysAgo);
-
+    // 2. レシピ新規投稿数の集計
     const { count: todayRecipes } = await supabase
       .from('recipes')
       .select('*', { count: 'exact', head: true })
@@ -50,7 +40,13 @@ export async function GET(request: Request) {
       .select('*', { count: 'exact', head: true })
       .gte('created_at', sevenDaysAgo);
 
-    // 3. メール本文の作成
+    // 3. 総レシピ数の集計（論理削除されていない有効なもの）
+    const { count: totalRecipes } = await supabase
+      .from('recipes')
+      .select('*', { count: 'exact', head: true })
+      .is('deleted_at', null);
+
+    // 4. メール本文の作成
     const dateStr = now.toISOString().split('T')[0];
     const emailText = `
 NAMASTE 運営事務局様
@@ -64,18 +60,18 @@ NAMASTE 運営事務局様
 ・直近7日間の件数： ${weeklyInquiries || 0} 件
 
 ----------------------------------------
-■ レシピエンゲージメント (Engagement)
+■ レシピ・エンゲージメント (Recipes)
 ----------------------------------------
-・本日閲覧数 (PV)： ${todayPV || 0} 回
-・直近7日間の閲覧数 (PV)： ${weeklyPV || 0} 回
 ・本日の新規レシピ投稿： ${todayRecipes || 0} 件
 ・直近7日間の新規レシピ投稿： ${weeklyRecipes || 0} 件
+・公開中の累計レシピ数： ${totalRecipes || 0} 件
 
 ----------------------------------------
 管理画面はこちら：
 https://namaste-curry-seven.vercel.app/admin
     `.trim();
 
+    // SendGrid メール送信
     sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
     await sgMail.send({
       to: process.env.SENDGRID_FROM_EMAIL!,
