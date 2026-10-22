@@ -18,7 +18,6 @@ export async function GET(request: Request) {
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   try {
-    // 1. お問い合わせ集計
     const { count: todayInquiries } = await supabase
       .from("contact_inquiries")
       .select("*", { count: "exact", head: true })
@@ -29,7 +28,6 @@ export async function GET(request: Request) {
       .select("*", { count: "exact", head: true })
       .gte("created_at", sevenDaysAgo);
 
-    // 2. レシピ新規投稿数の集計
     const { count: todayRecipes } = await supabase
       .from("recipes")
       .select("*", { count: "exact", head: true })
@@ -40,41 +38,19 @@ export async function GET(request: Request) {
       .select("*", { count: "exact", head: true })
       .gte("created_at", sevenDaysAgo);
 
-    // 3. 総レシピ数の集計
     const { count: totalRecipes } = await supabase
       .from("recipes")
       .select("*", { count: "exact", head: true })
       .is("deleted_at", null);
 
-    // 4. メール本文の作成
     const dateStr = now.toISOString().split("T")[0];
-    const emailText = `NAMASTE 運営事務局様
+    const emailText = "NAMASTE Analytics Report (" + dateStr + ")\n\nInquiries Today: " + (todayInquiries || 0) + "\nInquiries 7 Days: " + (weeklyInquiries || 0) + "\n\nRecipes Today: " + (todayRecipes || 0) + "\nRecipes 7 Days: " + (weeklyRecipes || 0) + "\nTotal Active Recipes: " + (totalRecipes || 0);
 
-本日のサイト利用状況をお知らせします。（${dateStr}）
-
-----------------------------------------
-■ お問い合わせ (Inquiries)
-----------------------------------------
-・本日の新規件数： ${todayInquiries || 0} 件
-・直近7日間の件数： ${weeklyInquiries || 0} 件
-
-----------------------------------------
-■ レシピ・エンゲージメント (Recipes)
-----------------------------------------
-・本日の新規レシピ投稿： ${todayRecipes || 0} 件
-・直近7日間の新規レシピ投稿： ${weeklyRecipes || 0} 件
-・公開中の累計レシピ数： ${totalRecipes || 0} 件
-
-----------------------------------------
-管理画面はこちら：
-https://namaste-curry-seven.vercel.app/admin`;
-
-    // SendGrid メール送信
     sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
     await sgMail.send({
       to: process.env.SENDGRID_FROM_EMAIL!,
       from: process.env.SENDGRID_FROM_EMAIL!,
-      subject: `【NAMASTE】日次アナリティクスレポート（${dateStr}）`,
+      subject: "【NAMASTE】日次アナリティクスレポート（" + dateStr + "）",
       text: emailText,
     });
 
