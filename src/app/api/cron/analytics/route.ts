@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import sgMail from '@sendgrid/mail';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import sgMail from "@sendgrid/mail";
 
 export async function GET(request: Request) {
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new NextResponse('Unauthorized', { status: 401 });
+    return new NextResponse("Unauthorized", { status: 401 });
   }
 
   const supabase = createClient(
@@ -20,36 +20,35 @@ export async function GET(request: Request) {
   try {
     // 1. お問い合わせ集計
     const { count: todayInquiries } = await supabase
-      .from('contact_inquiries')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', startOfToday);
+      .from("contact_inquiries")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfToday);
 
     const { count: weeklyInquiries } = await supabase
-      .from('contact_inquiries')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', sevenDaysAgo);
+      .from("contact_inquiries")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo);
 
     // 2. レシピ新規投稿数の集計
     const { count: todayRecipes } = await supabase
-      .from('recipes')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', startOfToday);
+      .from("recipes")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfToday);
 
     const { count: weeklyRecipes } = await supabase
-      .from('recipes')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', sevenDaysAgo);
+      .from("recipes")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo);
 
-    // 3. 総レシピ数の集計（論理削除されていない有効なもの）
+    // 3. 総レシピ数の集計
     const { count: totalRecipes } = await supabase
-      .from('recipes')
-      .select('*', { count: 'exact', head: true })
-      .is('deleted_at', null);
+      .from("recipes")
+      .select("*", { count: "exact", head: true })
+      .is("deleted_at", null);
 
     // 4. メール本文の作成
-    const dateStr = now.toISOString().split('T')[0];
-    const emailText = `
-NAMASTE 運営事務局様
+    const dateStr = now.toISOString().split("T")[0];
+    const emailText = `NAMASTE 運営事務局様
 
 本日のサイト利用状況をお知らせします。（${dateStr}）
 
@@ -68,8 +67,7 @@ NAMASTE 運営事務局様
 
 ----------------------------------------
 管理画面はこちら：
-https://namaste-curry-seven.vercel.app/admin
-    `.trim();
+https://namaste-curry-seven.vercel.app/admin`;
 
     // SendGrid メール送信
     sgMail.setApiKey(process.env.SENDGRID_API_KEY!);
@@ -80,9 +78,9 @@ https://namaste-curry-seven.vercel.app/admin
       text: emailText,
     });
 
-    return NextResponse.json({ success: true, message: 'Analytics email sent successfully' });
+    return NextResponse.json({ success: true, message: "Analytics email sent successfully" });
   } catch (err: any) {
-    console.error('Analytics Cron Error:', err);
+    console.error("Analytics Cron Error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
