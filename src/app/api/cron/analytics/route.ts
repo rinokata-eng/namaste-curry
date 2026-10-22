@@ -45,55 +45,21 @@ export async function GET(request: Request) {
       .select("*", { count: "exact", head: true })
       .eq("status", "pending");
 
-    // 2. レシピエンゲージメント
-    const { count: todayPV } = await supabase
-      .from("recipe_views")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfToday);
+    // 2. レシピデータから総PV数・総いいね数を直接集計
+    const { data: recipeStats } = await supabase
+      .from("recipes")
+      .select("pv_count, likes_count")
+      .is("deleted_at", null);
 
-    const { count: yesterdayPV } = await supabase
-      .from("recipe_views")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfYesterday)
-      .lt("created_at", startOfToday);
+    const totalPV = recipeStats ? recipeStats.reduce((sum, r) => sum + (r.pv_count || 0), 0) : 0;
+    const totalLikes = recipeStats ? recipeStats.reduce((sum, r) => sum + (r.likes_count || 0), 0) : 0;
 
-    const { count: weeklyPV } = await supabase
-      .from("recipe_views")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", sevenDaysAgo);
+    // お気に入り数 (recipe_bookmarks から取得)
+    const { count: totalFavorites } = await supabase
+      .from("recipe_bookmarks")
+      .select("*", { count: "exact", head: true });
 
-    const { count: todayLikes } = await supabase
-      .from("recipe_likes")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfToday);
-
-    const { count: yesterdayLikes } = await supabase
-      .from("recipe_likes")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfYesterday)
-      .lt("created_at", startOfToday);
-
-    const { count: weeklyLikes } = await supabase
-      .from("recipe_likes")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", sevenDaysAgo);
-
-    const { count: todayFavorites } = await supabase
-      .from("recipe_favorites")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfToday);
-
-    const { count: yesterdayFavorites } = await supabase
-      .from("recipe_favorites")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", startOfYesterday)
-      .lt("created_at", startOfToday);
-
-    const { count: weeklyFavorites } = await supabase
-      .from("recipe_favorites")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", sevenDaysAgo);
-
+    // レシピ新規投稿数
     const { count: todayRecipes } = await supabase
       .from("recipes")
       .select("*", { count: "exact", head: true })
@@ -131,7 +97,6 @@ export async function GET(request: Request) {
       .from("profiles")
       .select("*", { count: "exact", head: true });
 
-    // 前日比フォーマット補助関数
     const formatDiff = (today: number = 0, yesterday: number = 0) => {
       const diff = today - yesterday;
       return diff >= 0 ? `+${diff}` : `${diff}`;
@@ -153,15 +118,15 @@ export async function GET(request: Request) {
       "----------------------------------------",
       "■ レシピエンゲージメント (Engagement)",
       "----------------------------------------",
-      `・総PV数（ページ閲覧）： ${todayPV || 0} 回\n  （前日比: ${formatDiff(todayPV || 0, yesterdayPV || 0)}回 / 過去7日間: +${weeklyPV || 0}回）`,
-      `・総いいね数： ${todayLikes || 0} 件\n  （前日比: ${formatDiff(todayLikes || 0, yesterdayLikes || 0)}件 / 過去7日間: +${weeklyLikes || 0}件）`,
-      `・総お気に入り保存数： ${todayFavorites || 0} 件\n  （前日比: ${formatDiff(todayFavorites || 0, yesterdayFavorites || 0)}件 / 過去7日間: +${weeklyFavorites || 0}件）`,
-      `・新規レシピ投稿数： ${todayRecipes || 0} 件\n  （前日比: ${formatDiff(todayRecipes || 0, yesterdayRecipes || 0)}件 / 過去7日間: +${weeklyRecipes || 0}件）`,
+      `・総PV数（ページ閲覧）： ${totalPV} 回`,
+      `・総いいね数： ${totalLikes} 件`,
+      `・総お気に入り保存数： ${totalFavorites || 0} 件`,
+      `・新規レシピ投稿数： ${todayRecipes || 0} 件\n  （前日比: ${formatDiff(todayRecipes || 0, yesterdayRecipes || 0)}件 / 過去7日間: ${weeklyRecipes || 0}件）`,
       "",
       "----------------------------------------",
       "■ ユーザーアクティビティ (Users)",
       "----------------------------------------",
-      `・新規会員登録： ${todayUsers || 0} 名\n  （前日比: ${formatDiff(todayUsers || 0, yesterdayUsers || 0)}名 / 過去7日間: +${weeklyUsers || 0}名）`,
+      `・新規会員登録： ${todayUsers || 0} 名\n  （前日比: ${formatDiff(todayUsers || 0, yesterdayUsers || 0)}名 / 過去7日間: ${weeklyUsers || 0}名）`,
       `・累計会員数： ${totalUsers || 0} 名`,
       "",
       "----------------------------------------",
