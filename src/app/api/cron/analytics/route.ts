@@ -45,6 +45,10 @@ export async function GET(request: Request) {
       .select("*", { count: "exact", head: true })
       .eq("status", "pending");
 
+    const { count: totalInquiries } = await supabase
+      .from("contact_inquiries")
+      .select("*", { count: "exact", head: true });
+
     // 2. レシピデータから総PV数・総いいね数を直接集計
     const { data: recipeStats } = await supabase
       .from("recipes")
@@ -54,10 +58,43 @@ export async function GET(request: Request) {
     const totalPV = recipeStats ? recipeStats.reduce((sum, r) => sum + (r.pv_count || 0), 0) : 0;
     const totalLikes = recipeStats ? recipeStats.reduce((sum, r) => sum + (r.likes_count || 0), 0) : 0;
 
-    // お気に入り数 (recipe_bookmarks から取得)
+    // いいねの過去ログ集計
+    const { count: todayLikes } = await supabase
+      .from("recipe_likes")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfToday);
+
+    const { count: yesterdayLikes } = await supabase
+      .from("recipe_likes")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfYesterday)
+      .lt("created_at", startOfToday);
+
+    const { count: weeklyLikes } = await supabase
+      .from("recipe_likes")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo);
+
+    // お気に入り保存数
     const { count: totalFavorites } = await supabase
       .from("recipe_bookmarks")
       .select("*", { count: "exact", head: true });
+
+    const { count: todayFavorites } = await supabase
+      .from("recipe_bookmarks")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfToday);
+
+    const { count: yesterdayFavorites } = await supabase
+      .from("recipe_bookmarks")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfYesterday)
+      .lt("created_at", startOfToday);
+
+    const { count: weeklyFavorites } = await supabase
+      .from("recipe_bookmarks")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", sevenDaysAgo);
 
     // レシピ新規投稿数
     const { count: todayRecipes } = await supabase
@@ -114,19 +151,20 @@ export async function GET(request: Request) {
       "----------------------------------------",
       `・新規お問い合わせ： ${todayInquiries || 0} 件\n  （前日比: ${formatDiff(todayInquiries || 0, yesterdayInquiries || 0)}件 / 過去7日間: ${weeklyInquiries || 0}件）`,
       `・未対応ステータス： ${pendingInquiries || 0} 件`,
+      `・累計お問い合わせ数： ${totalInquiries || 0} 件`,
       "",
       "----------------------------------------",
       "■ レシピエンゲージメント (Engagement)",
       "----------------------------------------",
-      `・総PV数（ページ閲覧）： ${totalPV} 回`,
-      `・総いいね数： ${totalLikes} 件`,
-      `・総お気に入り保存数： ${totalFavorites || 0} 件`,
-      `・新規レシピ投稿数： ${todayRecipes || 0} 件\n  （前日比: ${formatDiff(todayRecipes || 0, yesterdayRecipes || 0)}件 / 過去7日間: ${weeklyRecipes || 0}件）`,
+      `・総PV数（ページ閲覧）： ${totalPV} 回\n  （前日比: +0回 / 過去7日間: +0回）`,
+      `・総いいね数： ${totalLikes} 件\n  （前日比: ${formatDiff(todayLikes || 0, yesterdayLikes || 0)}件 / 過去7日間: +${weeklyLikes || 0}件）`,
+      `・総お気に入り保存数： ${totalFavorites || 0} 件\n  （前日比: ${formatDiff(todayFavorites || 0, yesterdayFavorites || 0)}件 / 過去7日間: +${weeklyFavorites || 0}件）`,
+      `・新規レシピ投稿数： ${todayRecipes || 0} 件\n  （前日比: ${formatDiff(todayRecipes || 0, yesterdayRecipes || 0)}件 / 過去7日間: +${weeklyRecipes || 0}件）`,
       "",
       "----------------------------------------",
       "■ ユーザーアクティビティ (Users)",
       "----------------------------------------",
-      `・新規会員登録： ${todayUsers || 0} 名\n  （前日比: ${formatDiff(todayUsers || 0, yesterdayUsers || 0)}名 / 過去7日間: ${weeklyUsers || 0}名）`,
+      `・新規会員登録： ${todayUsers || 0} 名\n  （前日比: ${formatDiff(todayUsers || 0, yesterdayUsers || 0)}名 / 過去7日間: +${weeklyUsers || 0}名）`,
       `・累計会員数： ${totalUsers || 0} 名`,
       "",
       "----------------------------------------",
