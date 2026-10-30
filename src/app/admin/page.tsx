@@ -663,19 +663,41 @@ export default function AdminConsolePage() {
                         {inq.category}
                       </span>
                     )}
-                    <p className="text-slate-200 leading-relaxed whitespace-pre-wrap bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80">{inq.message}</p>
+                    <div className="space-y-2 my-2 max-h-80 overflow-y-auto p-1">
+                      {/* メッセージ履歴スレッド */}
+                      {inq.messages && inq.messages.length > 0 ? (
+                        inq.messages.map((m: any) => (
+                          <div
+                            key={m.id || m.created_at}
+                            className={`p-2.5 rounded-xl text-xs flex flex-col ${
+                              m.sender_type === 'admin'
+                                ? 'bg-amber-500/10 border border-amber-500/30 ml-4'
+                                : 'bg-slate-950/60 border border-slate-800 mr-4'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center mb-1 text-[10px]">
+                              <span className={m.sender_type === 'admin' ? 'font-bold text-amber-400' : 'font-bold text-slate-400'}>
+                                {m.sender_type === 'admin' ? '🛡️ 管理者回答' : '👤 ユーザー'}
+                              </span>
+                              <span className="text-slate-500">
+                                {new Date(m.created_at).toLocaleString('ja-JP')}
+                              </span>
+                            </div>
+                            <p className="text-slate-200 whitespace-pre-wrap leading-relaxed">{m.message}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-2.5 bg-slate-950/60 border border-slate-800 rounded-xl">
+                          <p className="text-slate-200 whitespace-pre-wrap leading-relaxed">{inq.message}</p>
+                        </div>
+                      )}
+                    </div>
 
-                    {inq.admin_reply && (
-                      <div className="bg-emerald-950/30 border border-emerald-800/50 rounded-lg p-2.5 mt-2">
-                        <div className="text-[11px] font-bold text-emerald-400 mb-1">送信済み返信内容:</div>
-                        <p className="text-slate-300 whitespace-pre-wrap">{inq.admin_reply}</p>
-                      </div>
-                    )}
-
+                    {/* 追加入力・返信フォーム */}
                     <div className="pt-2 border-t border-slate-800/80 mt-2">
                       <textarea
                         id={"reply-" + inq.id}
-                        placeholder="ユーザーへ送信する返信メッセージを入力..."
+                        placeholder="このスレッドに返信メッセージを入力..."
                         rows={2}
                         className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500 mb-2 resize-y"
                       />
@@ -685,13 +707,14 @@ export default function AdminConsolePage() {
                             const textarea = document.getElementById("reply-" + inq.id) as HTMLTextAreaElement;
                             if (textarea && textarea.value) {
                               handleSendReply(inq.id, inq.email, textarea.value);
+                              textarea.value = '';
                             } else {
                               alert('返信メッセージを入力してください');
                             }
                           }}
                           className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg transition"
                         >
-                          ✉️ メールで返信する
+                          ✉️ スレッドに返信する
                         </button>
                       </div>
                     </div>

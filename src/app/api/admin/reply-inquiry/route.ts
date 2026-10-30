@@ -18,17 +18,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    if (process.env.SENDGRID_API_KEY && userEmail) {
-      const msg = {
-        to: userEmail,
-        from: process.env.SENDGRID_FROM_EMAIL || 'noreply@namaste-recipe.vercel.app',
-        subject: '【NAMASTE】お問い合わせへの回答のご案内',
-        text: `NAMASTEをご利用いただきありがとうございます。\n\nお問い合わせいただいた件について、管理者より回答いたします。\n\n----------------------------------------\n${replyMessage}\n----------------------------------------\n\n引き続きNAMASTEをよろしくお願いいたします。`,
-      };
-      await sgMail.send(msg);
-    }
+    // 1. inquiry_messages テーブルに管理者メッセージを追加
+    const { error: msgError } = await supabase
+      .from('inquiry_messages')
+      .insert({
+        inquiry_id: inquiryId,
+        sender_type: 'admin',
+        message: replyMessage,
+      });
 
-    const { error } = await supabase
+    if (msgError) throw msgError;
+
+    // 2. contact_inquiries のステータスを更新
+    const { error: inqError } = await supabase
       .from('contact_inquiries')
       .update({
         status: status || 'completed',
@@ -37,7 +39,39 @@ export async function POST(req: Request) {
       })
       .eq('id', inquiryId);
 
-    if (error) throw error;
+    if (inqError) throw inqError;
+
+    // 3. ユーザーへ回答到着の通知メールを送信
+    if (process.env.SENDGRID_API_KEY && userEmail) {
+      const senderEmail = process.env.SENDGRID_FROM_EMAIL || 'noreply@namaste-recipe.vercel.app';
+      const msg = {
+        to: userEmail,
+        from: {
+          email: senderEmail,
+          name: 'NAMASTE 運営事務局',
+        },
+        replyTo: {
+          email: senderEmail,
+          name: 'NAMASTE 運営事務局（送信専用）',
+        },
+        subject: '【NAMASTE】お問い合わせへの新しい回答が届きました',
+        text: `NAMASTEをご利用いただきありがとうございます。
+
+お問い合わせいただいた件について、管理者より新しい回答が追加されました。
+
+----------------------------------------
+${replyMessage}
+----------------------------------------
+
+※このメールアドレスは送信専用です。
+※連続してご質問・ご返信がある場合は、NAMASTE内のマイページ（お問い合わせ履歴）よりメッセージをお送りいただけます。
+
+----------------------------------------
+NAMASTE 運営事務局
+`,
+      };
+      await sgMail.send(msg);
+    }
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
