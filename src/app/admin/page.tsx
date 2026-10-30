@@ -606,19 +606,64 @@ export default function AdminConsolePage() {
             ) : (
               <div className="space-y-3">
                 {inquiries.map((inq) => (
-                  <div key={inq.id} className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
+                  <div key={inq.id} className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 space-y-3 text-xs mb-3">
                     <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                      <span className="font-bold text-amber-400">{inq.name} ({inq.email})</span>
-                      <span className="text-[11px] text-slate-500">
-                        {new Date(inq.created_at).toLocaleString('ja-JP')}
-                      </span>
+                      <div>
+                        <span className="font-bold text-amber-400 mr-2">{inq.name}</span>
+                        <span className="text-slate-400">({inq.email})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500">
+                          {new Date(inq.created_at).toLocaleString('ja-JP')}
+                        </span>
+                        <select
+                          value={inq.status || 'unresponded'}
+                          onChange={(e) => handleUpdateInquiryStatus(inq.id, e.target.value)}
+                          className="bg-slate-800 text-[11px] text-slate-200 border border-slate-700 rounded px-2 py-0.5 focus:outline-none focus:border-amber-500 cursor-pointer"
+                        >
+                          <option value="unresponded">🔴 未対応</option>
+                          <option value="in_progress">🟡 継続対応中</option>
+                          <option value="completed">🟢 対応完了</option>
+                        </select>
+                      </div>
                     </div>
                     {inq.category && (
                       <span className="inline-block bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-md text-[10px] font-bold">
                         {inq.category}
                       </span>
                     )}
-                    <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{inq.message}</p>
+                    <p className="text-slate-200 leading-relaxed whitespace-pre-wrap bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80">{inq.message}</p>
+
+                    {inq.admin_reply && (
+                      <div className="bg-emerald-950/30 border border-emerald-800/50 rounded-lg p-2.5 mt-2">
+                        <div className="text-[11px] font-bold text-emerald-400 mb-1">送信済み返信内容:</div>
+                        <p className="text-slate-300 whitespace-pre-wrap">{inq.admin_reply}</p>
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-800/80 mt-2">
+                      <textarea
+                        id={"reply-" + inq.id}
+                        placeholder="ユーザーへ送信する返信メッセージを入力..."
+                        rows={2}
+                        className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500 mb-2 resize-y"
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => {
+                            const textarea = document.getElementById("reply-" + inq.id) as HTMLTextAreaElement;
+                            if (textarea && textarea.value) {
+                              handleSendReply(inq.id, inq.email, textarea.value);
+                            } else {
+                              alert('返信メッセージを入力してください');
+                            }
+                          }}
+                          className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg transition"
+                        >
+                          ✉️ メールで返信する
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
