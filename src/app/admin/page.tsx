@@ -29,6 +29,37 @@ function getBalmaRank(postCount: number, totalLikes: number, manualRank?: string
 }
 
 export default function AdminConsolePage() {
+
+  const handleUpdateInquiryStatus = async (inquiryId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase
+        .from('contact_inquiries')
+        .update({ status: newStatus })
+        .eq('id', inquiryId);
+
+      if (error) throw error;
+      setInquiries((prev: any[]) => prev.map(item => item.id === inquiryId ? { ...item, status: newStatus } : item));
+    } catch (err) {
+      alert('ステータスの更新に失敗しました');
+    }
+  };
+
+  const handleSendReply = async (inquiryId: string, userEmail: string, replyMessage: string) => {
+    if (!replyMessage.trim()) return alert('返信内容を入力してください');
+    try {
+      const res = await fetch('/api/admin/reply-inquiry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inquiryId, userEmail, replyMessage, status: 'completed' }),
+      });
+      if (!res.ok) throw new Error('送信失敗');
+      alert('返信メールを送信し、ステータスを対応完了に更新しました！');
+      setInquiries((prev: any[]) => prev.map(item => item.id === inquiryId ? { ...item, status: 'completed', admin_reply: replyMessage } : item));
+    } catch (err) {
+      alert('メール送信に失敗しました');
+    }
+  };
+
   const [recipes, setRecipes] = useState<any[]>([])
   const [users, setUsers] = useState<any[]>([])
   const [inquiries, setInquiries] = useState<any[]>([])
