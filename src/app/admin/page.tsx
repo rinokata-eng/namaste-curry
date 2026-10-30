@@ -70,7 +70,7 @@ export default function AdminConsolePage() {
       { data: bData }
     ] = await Promise.all([
       supabase.from('recipes').select('*').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('profiles').select('*').neq('role', 'admin').order('created_at', { ascending: false }),
       supabase.from('recipe_evaluations').select('*'),
       supabase.from('follows').select('*'),
       supabase.from('recipe_bookmarks').select('*')
