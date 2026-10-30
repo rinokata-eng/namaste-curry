@@ -63,8 +63,7 @@ export default function HomePage() {
       }
 
       const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
+        .from('profiles').select('*').neq('role', 'admin')
         .order('created_at', { ascending: false })
 
       if (profileData) {
@@ -105,8 +104,7 @@ export default function HomePage() {
         if (folRows && folRows.length > 0) {
           const folIds = folRows.map((f) => f.following_id)
           const { data: folProfiles } = await supabase
-            .from('profiles')
-            .select('*')
+            .from('profiles').select('*').neq('role', 'admin')
             .in('id', folIds)
           if (folProfiles) setFollowingUsers(folProfiles)
         }
