@@ -605,12 +605,66 @@ export default function AdminConsolePage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {inquiries.map((inq) => (
-                  <div key={inq.id} className="bg-slate-900/60 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                      <span className="font-bold text-amber-400">{inq.name} ({inq.email})</span>
-                      <span className="text-[11px] text-slate-500">
-                        {new Date(inq.created_at).toLocaleString('ja-JP')}
+                {inquiries.map((inquiry: any) => (
+              <div key={inquiry.id} className="bg-slate-900/80 border border-slate-700/60 rounded-xl p-5 mb-4 shadow-md">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <span className="font-bold text-amber-400 text-lg mr-2">{inquiry.name || '名称未設定'}</span>
+                    <span className="text-sm text-slate-400">({inquiry.email})</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">{new Date(inquiry.created_at).toLocaleString('ja-JP')}</span>
+                    <select
+                      value={inquiry.status || 'unresponded'}
+                      onChange={(e) => handleUpdateInquiryStatus(inquiry.id, e.target.value)}
+                      className="bg-slate-800 text-xs font-semibold text-slate-200 border border-slate-600 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-500 cursor-pointer"
+                    >
+                      <option value="unresponded">🔴 未対応</option>
+                      <option value="in_progress">🟡 継続対応中</option>
+                      <option value="completed">🟢 対応完了</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="inline-block bg-amber-500/10 text-amber-400 text-xs px-2.5 py-1 rounded-md mb-2 font-medium">
+                  {inquiry.category || 'お問い合わせ'}
+                </div>
+                <p className="text-slate-200 text-sm whitespace-pre-wrap bg-slate-950/50 p-3 rounded-lg border border-slate-800 mb-4">
+                  {inquiry.message}
+                </p>
+
+                {inquiry.admin_reply && (
+                  <div className="mb-4 bg-emerald-950/30 border border-emerald-800/50 rounded-lg p-3">
+                    <div className="text-xs font-bold text-emerald-400 mb-1">送信済み返信内容:</div>
+                    <p className="text-xs text-slate-300 whitespace-pre-wrap">{inquiry.admin_reply}</p>
+                  </div>
+                )}
+
+                <div className="mt-3 pt-3 border-t border-slate-800">
+                  <textarea
+                    id={"reply-" + inquiry.id}
+                    placeholder="ユーザーへ送信する返信メッセージを入力..."
+                    rows={2}
+                    className="w-full bg-slate-950 border border-slate-700 text-slate-200 text-sm rounded-lg p-2.5 focus:outline-none focus:border-amber-500 mb-2 resize-y"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => {
+                        const textarea = document.getElementById("reply-" + inquiry.id);
+                        if (textarea && textarea.value) {
+                          handleSendReply(inquiry.id, inquiry.email, textarea.value);
+                        } else {
+                          alert('返信メッセージを入力してください');
+                        }
+                      }}
+                      className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-4 py-2 rounded-lg transition"
+                    >
+                      ✉️ メールで返信する
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
                       </span>
                     </div>
                     {inq.category && (
